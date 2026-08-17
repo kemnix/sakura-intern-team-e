@@ -1,0 +1,48 @@
+#cloud-config
+hostname: ${hostname}
+manage_etc_hosts: true
+password: ${password}
+chpasswd:
+  expire: false
+ssh_pwauth: true
+%{ if ssh_public_key != "" ~}
+ssh_authorized_keys:
+  - ${ssh_public_key}
+%{ endif ~}
+
+package_update: true
+package_upgrade: true
+
+write_files:
+  - path: /usr/local/bin/configure-private-nic.sh
+    permissions: '0755'
+    content: |
+      #!/bin/sh
+      set -eu
+
+      public_if="$(ip route show default | awk '/default/ {print $5; exit}')"
+      private_if="$(ls /sys/class/net | grep -Ev '^(lo|docker0)$' | grep -vx "$public_if" | head -n1)"
+
+      if [ -z "$private_if" ]; then
+        echo "private interface not found" >&2
+        exit 1
+      fi
+
+      cat >/etc/netplan/60-private-nic.yaml <<EOF
+      network:
+        version: 2
+        ethernets:
+          $${private_if}:
+            dhcp4: false
+            addresses:
+              - ${private_ip_cidr}
+      EOF
+
+      netplan apply
+
+runcmd:
+  - /usr/local/bin/configure-private-nic.sh
+  # Docker EngineとCompose V2インストール
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable --now docker
+  - usermod -a -G docker ubuntu
