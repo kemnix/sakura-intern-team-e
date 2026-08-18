@@ -2,10 +2,16 @@ services:
   api:
     build: .
     ports:
-      - "8080:8080"
+      - "${API_HOST_PORT:-8080}:8080"
     environment:
       - DATABASE_URL=sakuravel:password@tcp(db:3306)/sakuravel?parseTime=true&charset=utf8mb4
       - PORT=8080
+      # コード側の既定値と同じ。ここに書いておかないとコンテナに届かず、
+      # デプロイ環境からプールを調整できない。
+      - DB_MAX_OPEN_CONNS=10
+      - DB_MAX_IDLE_CONNS=5
+      # ブラウザから見たフロントの出所。FRONTEND_HOST_PORT を変えたら CORS も追随させる。
+      - ALLOWED_ORIGIN=http://localhost:${FRONTEND_HOST_PORT:-3000}
     depends_on:
       db:
         condition: service_healthy
@@ -19,7 +25,9 @@ services:
       MYSQL_PASSWORD: password
       MYSQL_ROOT_PASSWORD: password
     ports:
-      - "3306:3306"
+      # ホスト側で 3306 が埋まっている場合は DB_HOST_PORT で退避できる。
+      # 例: DB_HOST_PORT=13306 docker compose up -d
+      - "${DB_HOST_PORT:-3306}:3306"
     volumes:
       - ./migrations:/docker-entrypoint-initdb.d/
       - mariadb_data:/var/lib/mysql
@@ -30,10 +38,13 @@ services:
       retries: 5
 
   frontend:
-    image: <作成したコンテナレジストリのホスト名>/intern2026-app-frontend:latest
+    image: ${REGISTRY_HOST:-<作成したコンテナレジストリのホスト名>}/intern2026-app-frontend:latest
     platform: linux/amd64
     ports:
-      - "3000:3000"
+      - "${FRONTEND_HOST_PORT:-3000}:3000"
+    environment:
+      # ブラウザが叩く API の URL。API_HOST_PORT を変えたらここも追随する必要がある。
+      - API_URL=http://localhost:${API_HOST_PORT:-8080}
     depends_on:
       - api
     restart: on-failure

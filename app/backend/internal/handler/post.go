@@ -6,6 +6,11 @@ import (
 	"net/http"
 )
 
+// GetTimeline はタイムラインを返す。recommended フィードでは、いいね数を
+// 派生テーブルで先に集計してから posts に結合する。posts を直接 GROUP BY すると
+// TEXT 型の content がキーに含まれ、ディスク上の一時テーブルが強制されるため。
+// 投稿の肉付けは fetchPost の1件ずつの呼び出しではなく fetchPostsBulk にまとめており、
+// 1ページあたりの発行クエリ数は投稿件数に比例しない。
 func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 	myID, _ := h.currentUserID(r)
 	page, perPage, offset := h.pagination(r)
@@ -28,10 +33,14 @@ func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 		rows, err = h.DB.QueryContext(r.Context(), `
 			SELECT p.id, p.user_id, p.content, p.is_repost, p.original_post_id, p.created_at
 			FROM posts p
-			LEFT JOIN likes l ON l.post_id = p.id AND l.created_at > NOW() - INTERVAL 24 HOUR
+			LEFT JOIN (
+				SELECT post_id, COUNT(*) AS recent_likes
+				FROM likes
+				WHERE created_at > NOW() - INTERVAL 24 HOUR
+				GROUP BY post_id
+			) rl ON rl.post_id = p.id
 			WHERE p.parent_post_id IS NULL
-			GROUP BY p.id, p.user_id, p.content, p.is_repost, p.original_post_id, p.created_at
-			ORDER BY COUNT(l.post_id) DESC, p.created_at DESC, p.id DESC
+			ORDER BY COALESCE(rl.recent_likes, 0) DESC, p.created_at DESC, p.id DESC
 			LIMIT ? OFFSET ?
 		`, perPage, offset)
 	default: // "following"
@@ -52,24 +61,20 @@ func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	type postRow struct {
-		id     int64
-		userID int64
-	}
-	var rawPosts []postRow
+	var postIDs []int64
 	for rows.Next() {
-		var p postRow
-		var dummy any // content, is_repost, original_post_id, created_at
-		rows.Scan(&p.id, &p.userID, &dummy, &dummy, &dummy, &dummy)
-		rawPosts = append(rawPosts, p)
+		var id int64
+		var dummy any // user_id, content, is_repost, original_post_id, created_at
+		rows.Scan(&id, &dummy, &dummy, &dummy, &dummy, &dummy)
+		postIDs = append(postIDs, id)
 	}
+	rows.Close()
 
-	posts := make([]any, 0, len(rawPosts))
-	for _, rp := range rawPosts {
-		p, err := h.fetchPost(r, rp.id, myID)
-		if err == nil {
-			posts = append(posts, p)
-		}
+	// 1件ずつ fetchPost を呼ぶと投稿数に比例してクエリが増えるため、まとめて取得する
+	posts, err := h.fetchPostsBulk(r, postIDs, myID)
+	if err != nil {
+		h.respondError(w, http.StatusInternalServerError, "server error")
+		return
 	}
 
 	var total int

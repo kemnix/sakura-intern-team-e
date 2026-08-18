@@ -8,6 +8,7 @@ import (
 	"sakuravel/internal/model"
 	"sakuravel/internal/realtime"
 	"strconv"
+	"strings"
 )
 
 type Handler struct {
@@ -110,7 +111,7 @@ func (h *Handler) fetchPost(r *http.Request, postID, viewerID int64) (model.Post
 		`SELECT COUNT(*) FROM reposts WHERE post_id = ?`, p.ID,
 	).Scan(&p.RepostsCount)
 
-	p.RepliesCount = h.countReplies(r, p.ID, 0)
+	p.RepliesCount = h.countReplies(r, p.ID)
 
 	if viewerID > 0 {
 		h.DB.QueryRowContext(r.Context(),
@@ -148,32 +149,205 @@ func (h *Handler) fetchPost(r *http.Request, postID, viewerID int64) (model.Post
 	return p, nil
 }
 
+// placeholders は n 個のプレースホルダを並べた "?,?,?" 形式の文字列を返す。
+// IN 句の要素数だけが動的で、値そのものは常にプレースホルダ経由で束縛する。
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
+// maxRepostDepth はリポストの元投稿を辿る深さの上限（相互リポスト等の循環に対する保険）。
+const maxRepostDepth = 50
+
+// fetchPostsBulk は複数の投稿をまとめて取得する fetchPost の一括版。
+// 本体＋著者＋各種集計を1クエリ、返信数を再帰CTEの1クエリ、返信先と元投稿をそれぞれ1クエリで解決し、
+// 引数 postIDs と同じ順序で返す（著者が存在しない等で取得できなかった投稿は結果から除かれる）。
+// fetchPost とまったく同じ JSON を返すことが前提なので、model.Post の形や
+// fetchPost / fetchUser が埋める項目を変えるときは必ず両方を同時に更新すること。
+func (h *Handler) fetchPostsBulk(r *http.Request, postIDs []int64, viewerID int64) ([]model.Post, error) {
+	return h.fetchPostsBulkDepth(r, postIDs, viewerID, 0)
+}
+
+// fetchPostsBulkDepth は fetchPostsBulk の実体で、depth はリポスト元投稿を辿った深さ。
+// 元投稿の解決は取得済み投稿ぶんをまとめた再帰呼び出し1回で行い、
+// depth が maxRepostDepth に達した時点で打ち切る。
+func (h *Handler) fetchPostsBulkDepth(r *http.Request, postIDs []int64, viewerID int64, depth int) ([]model.Post, error) {
+	posts := make([]model.Post, 0, len(postIDs))
+	if len(postIDs) == 0 {
+		return posts, nil
+	}
+
+	// followed_by_me は fetchUser と同じ条件（閲覧者がログイン済みかつ著者本人でない）で判定する。
+	followerID, ok := h.currentUserID(r)
+	if !ok {
+		followerID = 0
+	}
+
+	args := make([]any, 0, len(postIDs)+4)
+	args = append(args, viewerID, viewerID, followerID, followerID)
+	for _, id := range postIDs {
+		args = append(args, id)
+	}
+
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT p.id, p.content, p.is_repost, p.original_post_id, p.parent_post_id, p.created_at,
+		       u.id, u.username, u.display_name, u.bio, u.created_at,
+		       (SELECT COUNT(*) FROM likes pl WHERE pl.post_id = p.id),
+		       (SELECT COUNT(*) FROM reposts pr WHERE pr.post_id = p.id),
+		       EXISTS(SELECT 1 FROM likes ml WHERE ml.user_id = ? AND ml.post_id = p.id),
+		       EXISTS(SELECT 1 FROM reposts mr WHERE mr.user_id = ? AND mr.post_id = p.id),
+		       (SELECT COUNT(*) FROM follows fr WHERE fr.followee_id = u.id),
+		       (SELECT COUNT(*) FROM follows fg WHERE fg.follower_id = u.id),
+		       (SELECT COUNT(*) FROM posts up WHERE up.user_id = u.id),
+		       (u.id <> ? AND EXISTS(SELECT 1 FROM follows mf WHERE mf.follower_id = ? AND mf.followee_id = u.id))
+		FROM posts p JOIN users u ON u.id = p.user_id
+		WHERE p.id IN (`+placeholders(len(postIDs))+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[int64]model.Post, len(postIDs))
+	for rows.Next() {
+		var p model.Post
+		var u model.User
+		if err := rows.Scan(
+			&p.ID, &p.Content, &p.IsRepost, &p.OriginalPostID, &p.ParentPostID, &p.CreatedAt,
+			&u.ID, &u.Username, &u.DisplayName, &u.Bio, &u.CreatedAt,
+			&p.LikesCount, &p.RepostsCount, &p.LikedByMe, &p.RepostedByMe,
+			&u.FollowersCount, &u.FollowingCount, &u.PostCount, &u.FollowedByMe,
+		); err != nil {
+			continue
+		}
+		u.AvatarColor = model.AvatarColor(u.ID)
+		p.Author = u
+		byID[p.ID] = p
+	}
+	rows.Close()
+
+	h.applyRepliesCount(r, postIDs, byID)
+	h.applyReplyTo(r, byID)
+
+	// リポストの元投稿は、1件ずつ引かずにまとめてもう一度一括取得する。
+	if depth < maxRepostDepth {
+		var originalIDs []int64
+		for _, p := range byID {
+			if p.IsRepost && p.OriginalPostID != nil && *p.OriginalPostID != p.ID {
+				originalIDs = append(originalIDs, *p.OriginalPostID)
+			}
+		}
+		if originals, err := h.fetchPostsBulkDepth(r, originalIDs, viewerID, depth+1); err == nil {
+			origByID := make(map[int64]model.Post, len(originals))
+			for _, o := range originals {
+				origByID[o.ID] = o
+			}
+			for id, p := range byID {
+				if !p.IsRepost || p.OriginalPostID == nil || *p.OriginalPostID == p.ID {
+					continue
+				}
+				if o, found := origByID[*p.OriginalPostID]; found {
+					p.OriginalPost = &o
+					byID[id] = p
+				}
+			}
+		}
+	}
+
+	for _, id := range postIDs {
+		if p, found := byID[id]; found {
+			posts = append(posts, p)
+		}
+	}
+	return posts, nil
+}
+
+// applyRepliesCount は byID の各投稿にぶら下がる返信の総数を1クエリでまとめて数え、代入する。
+// countReplies の再帰CTEに起点となる root_id を持たせた形で、投稿数によらず発行は常に1件。
+// 数えられなかった投稿の replies_count は countReplies と同じく 0 のままになる。
+func (h *Handler) applyRepliesCount(r *http.Request, postIDs []int64, byID map[int64]model.Post) {
+	args := make([]any, 0, len(postIDs))
+	for _, id := range postIDs {
+		args = append(args, id)
+	}
+	rows, err := h.DB.QueryContext(r.Context(), `
+		WITH RECURSIVE d(root_id, id) AS (
+			SELECT parent_post_id, id FROM posts WHERE parent_post_id IN (`+placeholders(len(postIDs))+`)
+			UNION ALL
+			SELECT d.root_id, p.id FROM posts p JOIN d ON p.parent_post_id = d.id
+		)
+		SELECT root_id, COUNT(*) FROM d GROUP BY root_id
+	`, args...)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var rootID int64
+		var count int
+		if err := rows.Scan(&rootID, &count); err != nil {
+			continue
+		}
+		if p, found := byID[rootID]; found {
+			p.RepliesCount = count
+			byID[rootID] = p
+		}
+	}
+}
+
+// applyReplyTo は返信である投稿に対して、返信先の投稿者名を1クエリでまとめて解決する。
+// 返信が1件も無ければクエリは発行しない。
+func (h *Handler) applyReplyTo(r *http.Request, byID map[int64]model.Post) {
+	var args []any
+	for id, p := range byID {
+		if p.ParentPostID != nil {
+			args = append(args, id)
+		}
+	}
+	if len(args) == 0 {
+		return
+	}
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT child.id, u.username, u.display_name
+		FROM posts child
+		JOIN posts parent ON parent.id = child.parent_post_id
+		JOIN users u ON u.id = parent.user_id
+		WHERE child.id IN (`+placeholders(len(args))+`)
+	`, args...)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var childID int64
+		var username, displayName string
+		if err := rows.Scan(&childID, &username, &displayName); err != nil {
+			continue
+		}
+		if p, found := byID[childID]; found {
+			p.ReplyToUsername = &username
+			p.ReplyToDisplayName = &displayName
+			byID[childID] = p
+		}
+	}
+}
+
 // maxThreadDepth はスレッドを辿る深さの上限（循環や極端に深いスレッドの保険）。
 const maxThreadDepth = 50
 
 // countReplies は投稿にぶら下がる返信の数を返す。ネストした返信も含めた合計。
-func (h *Handler) countReplies(r *http.Request, postID int64, depth int) int {
-	if depth >= maxThreadDepth {
-		return 0
-	}
-
-	rows, err := h.DB.QueryContext(r.Context(),
-		`SELECT id FROM posts WHERE parent_post_id = ?`, postID)
+// 子孫を1ノードずつ辿るのではなく、再帰CTEによる単一クエリで数えるため、
+// 発行クエリ数はスレッドの大きさによらず常に1件になる。
+// 深さ上限も撤廃したので、50階層より深いスレッドでも実際の子孫数を返す（従来は過少カウントだった）。
+func (h *Handler) countReplies(r *http.Request, postID int64) int {
+	var total int
+	err := h.DB.QueryRowContext(r.Context(), `
+		WITH RECURSIVE descendants AS (
+			SELECT id FROM posts WHERE parent_post_id = ?
+			UNION ALL
+			SELECT p.id FROM posts p JOIN descendants d ON p.parent_post_id = d.id
+		)
+		SELECT COUNT(*) FROM descendants
+	`, postID).Scan(&total)
 	if err != nil {
 		return 0
-	}
-
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		rows.Scan(&id)
-		ids = append(ids, id)
-	}
-	rows.Close()
-
-	total := len(ids)
-	for _, id := range ids {
-		total += h.countReplies(r, id, depth+1)
 	}
 	return total
 }

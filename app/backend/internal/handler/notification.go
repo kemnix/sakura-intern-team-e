@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"database/sql"
 	"net/http"
 	"sakuravel/internal/realtime"
 )
@@ -142,21 +144,44 @@ func excerptOf(content *string) *string {
 	return &s
 }
 
-func createNotification(h *Handler, r *http.Request, userID int64, ntype string, actorID int64, postID *int64) {
+// notifExecutor は通知の INSERT に必要な最小限の実行インターフェース。
+// *sql.DB と *sql.Tx の双方が満たすので、通常経路とトランザクション経路で
+// 同じ INSERT を共有できる。
+type notifExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// insertNotification は通知行の INSERT だけを行う。SSE 配信を含まないので、
+// 呼び出し側はコミット後まで配信を遅らせられる。
+// 自分自身への通知は抑止し、その場合は inserted=false を返す。
+func insertNotification(ctx context.Context, exec notifExecutor, userID int64, ntype string, actorID int64, postID *int64) (bool, error) {
 	if userID == actorID {
-		return
+		return false, nil
 	}
-	_, err := h.DB.ExecContext(r.Context(),
+	if _, err := exec.ExecContext(ctx,
 		`INSERT INTO notifications (user_id, type, actor_id, post_id) VALUES (?, ?, ?, ?)`,
 		userID, ntype, actorID, postID,
-	)
-	if err != nil {
-		return
+	); err != nil {
+		return false, err
 	}
+	return true, nil
+}
 
-	// 宛先ユーザーが SSE で接続していればバッジ更新用に通知する
+// publishNotification は SSE 配信だけを行う。
+// 宛先ユーザーが SSE で接続していればバッジ更新用に通知する。
+func publishNotification(h *Handler, userID int64, ntype string, postID *int64) {
 	h.Notifications.Publish(userID, realtime.Event{
 		Type: "notification",
 		Data: map[string]any{"type": ntype, "post_id": postID},
 	})
+}
+
+// createNotification は INSERT と SSE 配信をまとめて行う従来どおりの入口で、
+// 署名も挙動（自己通知の抑止・エラー握り潰し）も変更していない。
+func createNotification(h *Handler, r *http.Request, userID int64, ntype string, actorID int64, postID *int64) {
+	inserted, err := insertNotification(r.Context(), h.DB, userID, ntype, actorID, postID)
+	if err != nil || !inserted {
+		return
+	}
+	publishNotification(h, userID, ntype, postID)
 }
