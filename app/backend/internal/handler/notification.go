@@ -116,10 +116,13 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) MarkNotificationsRead(w http.ResponseWriter, r *http.Request) {
 	myID, _ := h.currentUserID(r)
-	h.DB.ExecContext(r.Context(),
+	if _, err := h.DB.ExecContext(r.Context(),
 		`UPDATE notifications SET is_read = TRUE WHERE user_id = ? AND is_read = FALSE`,
 		myID,
-	)
+	); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	h.respondJSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
 

@@ -1,17 +1,21 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 )
 
+// recordFootprint は閲覧の副作用なので、失敗しても閲覧は成功させ、ログにだけ残す。
 func recordFootprint(h *Handler, r *http.Request, userID, visitorID int64) {
 	if userID == visitorID {
 		return
 	}
-	h.DB.ExecContext(r.Context(),
+	if _, err := h.DB.ExecContext(r.Context(),
 		`INSERT INTO footprints (user_id, visitor_id) VALUES (?, ?)`,
 		userID, visitorID,
-	)
+	); err != nil {
+		log.Printf("footprint: record (user=%d visitor=%d): %v", userID, visitorID, err)
+	}
 }
 
 func (h *Handler) GetFootprints(w http.ResponseWriter, r *http.Request) {
