@@ -1,13 +1,17 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
+	"sakuravel/internal/notify"
 	"sakuravel/internal/realtime"
 )
 
-// CreateReply は指定した投稿への返信を作成する。返信も posts の1行として保存する。
+// CreateReply は指定した投稿への返信を作成する。返信も posts の 1 行として保存する。
+// 通知は createNotificationOnce 経由にして、同じ通知が二重に積まれないようにする。
 func (h *Handler) CreateReply(w http.ResponseWriter, r *http.Request) {
 	myID, _ := h.currentUserID(r)
 
@@ -34,7 +38,7 @@ func (h *Handler) CreateReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -43,24 +47,42 @@ func (h *Handler) CreateReply(w http.ResponseWriter, r *http.Request) {
 		myID, req.Content, parentID,
 	)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	postID, err := res.LastInsertId()
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 
 	post, _ := h.fetchPost(r, postID, myID)
 
 	// 通知は直接の返信先の著者にのみ送る
-	createNotification(h, r, parentAuthorID, "reply", myID, &postID)
+	createNotificationOnce(h, r, parentAuthorID, "reply", myID, &postID)
 
-	// 同じスレッドを開いている購読者へリアルタイム配信する
-	h.Threads.Publish(h.threadRootID(r, parentID), realtime.Event{Type: "reply", Data: post})
+	// 自プロセスのサブスクライバーにもここで直接は配らず、必ずイベント行を経由させる。本文を
+	// 持つイベントなので、直接配信とポーラ経由の両方を通すと同じ返信が二重に描かれてしまう。
+	// イベント行は commit の後に書き、応答後に ctx がキャンセルされても書き切る。
+	rootID := h.threadRootID(r, parentID)
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), relayWriteTimeout)
+	defer cancel()
+	if err := notify.PublishReply(writeCtx, h.DB, rootID, postID); err != nil {
+		log.Printf("notify: publish reply event (root=%d post=%d): %v", rootID, postID, err)
+	}
 
 	h.respondJSON(w, http.StatusCreated, map[string]any{"post": post})
+}
+
+// ReplyEvent は返信イベントの本文を post_id から組み立て直す (notify.ReplyHydrator)。
+// バスから呼ばれるためリクエストが無く、fetchPost には ctx だけを持つ空のリクエストを渡す。
+// 閲覧者を 0 にできるのは、書かれたばかりの返信では閲覧者依存の項目が常に false のため。
+func (h *Handler) ReplyEvent(ctx context.Context, postID int64) (realtime.Event, error) {
+	post, err := h.fetchPost((&http.Request{}).WithContext(ctx), postID, 0)
+	if err != nil {
+		return realtime.Event{}, err
+	}
+	return realtime.Event{Type: "reply", Data: post}, nil
 }
 
 // GetThread は対象投稿と、その祖先チェーン・返信ツリーをまとめて返す。
@@ -78,7 +100,7 @@ func (h *Handler) GetThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 

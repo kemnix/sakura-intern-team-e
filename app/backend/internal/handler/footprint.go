@@ -31,7 +31,7 @@ func (h *Handler) GetFootprints(w http.ResponseWriter, r *http.Request) {
 		LIMIT ? OFFSET ?
 	`, userID, perPage, offset)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	defer rows.Close()
