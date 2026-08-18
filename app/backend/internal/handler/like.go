@@ -52,6 +52,16 @@ func (h *Handler) Like(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// いいねをする前にいいね先の投稿が存在するか確認
+	// 存在しなければerrorを返す
+	var postOwnerID int64
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT user_id FROM posts WHERE id = ?`, req.PostID,
+	).Scan(&postOwnerID); err != nil {
+		h.respondError(w, http.StatusNotFound, "post not found")
+		return
+	}
+	
 	h.DB.ExecContext(r.Context(),
 		`INSERT INTO likes (user_id, post_id) VALUES (?, ?)
 		 ON DUPLICATE KEY UPDATE user_id = user_id`,
@@ -59,12 +69,8 @@ func (h *Handler) Like(w http.ResponseWriter, r *http.Request) {
 	)
 
 	// 投稿者に通知
-	var postOwnerID int64
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT user_id FROM posts WHERE id = ?`, req.PostID,
-	).Scan(&postOwnerID); err == nil {
-		createNotification(h, r, postOwnerID, "like", myID, &req.PostID)
-	}
+	createNotification(h, r, postOwnerID, "like", myID, &req.PostID)
+
 
 	var count int
 	h.DB.QueryRowContext(r.Context(),
