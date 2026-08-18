@@ -151,11 +151,21 @@ func (h *Handler) Follow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// フォロー前に対象ユーザ(targetID)が存在するか確認
+	if _, err := h.fetchUser(r, targetID); err == sql.ErrNoRows {
+		h.respondError(w, http.StatusNotFound, "user not found")
+		return
+	}else if err != nil {
+		h.respondError(w, http.StatusInternalServerError, "server error")
+		return
+	}
+
 	_, err = h.DB.ExecContext(r.Context(),
 		`INSERT INTO follows (follower_id, followee_id) VALUES (?, ?)
 		 ON DUPLICATE KEY UPDATE follower_id = follower_id`,
 		myID, targetID,
 	)
+
 	if err != nil {
 		h.respondError(w, http.StatusInternalServerError, "server error")
 		return
