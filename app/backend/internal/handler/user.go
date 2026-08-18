@@ -14,12 +14,15 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 	user, err := h.fetchUser(r, myID)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	h.respondJSON(w, http.StatusOK, map[string]any{"user": user})
 }
 
+// GetProfile は指定ユーザーのプロフィールを返し、他人の閲覧なら足跡を残す。
+// 足跡そのものは訪問回数を数えるため毎回 1 行増やすが、通知は
+// createNotificationOnce にして同じ訪問者からの再訪では増やさない。
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	userID, err := pathID(r, "user_id")
 	if err != nil {
@@ -33,14 +36,14 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 
 	// 足跡を記録（認証済みユーザーのみ）
 	if visitorID, ok := h.currentUserID(r); ok {
 		recordFootprint(h, r, userID, visitorID)
-		createNotification(h, r, userID, "footprint", visitorID, nil)
+		createNotificationOnce(h, r, userID, "footprint", visitorID, nil)
 	}
 
 	h.respondJSON(w, http.StatusOK, map[string]any{"user": user})
@@ -63,7 +66,7 @@ func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		req.DisplayName, req.Bio, myID,
 	)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -82,7 +85,7 @@ func (h *Handler) GetFollowers(w http.ResponseWriter, r *http.Request) {
 		`SELECT follower_id FROM follows WHERE followee_id = ?`, userID,
 	)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	defer rows.Close()
@@ -118,7 +121,7 @@ func (h *Handler) GetFollowing(w http.ResponseWriter, r *http.Request) {
 		`SELECT followee_id FROM follows WHERE follower_id = ?`, userID,
 	)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	defer rows.Close()
@@ -143,6 +146,9 @@ func (h *Handler) GetFollowing(w http.ResponseWriter, r *http.Request) {
 	h.respondJSON(w, http.StatusOK, map[string]any{"users": users, "total": len(users)})
 }
 
+// Follow は対象ユーザーをフォローする。follows は主キーで冪等なのに通知だけが
+// 毎回増えていたので、通知も createNotificationOnce で冪等にする。
+// この通知は post_id が NULL であり、= 比較では重複排除できない側の経路である。
 func (h *Handler) Follow(w http.ResponseWriter, r *http.Request) {
 	myID, _ := h.currentUserID(r)
 	targetID, err := pathID(r, "user_id")
@@ -167,11 +173,11 @@ func (h *Handler) Follow(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 
-	createNotification(h, r, targetID, "follow", myID, nil)
+	createNotificationOnce(h, r, targetID, "follow", myID, nil)
 
 	h.respondJSON(w, http.StatusOK, map[string]string{"message": "followed"})
 }

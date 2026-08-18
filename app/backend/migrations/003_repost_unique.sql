@@ -1,84 +1,11 @@
--- 003_repost_unique.sql
---
--- 目的: リポストで posts が多重登録される問題を、DB 側の制約で止める。
---
--- 001_init.sql の posts は PRIMARY KEY (id) しか持たず、id は AUTO_INCREMENT である
--- (001_init.sql:19)。そのため repost.go の
---     INSERT INTO posts (user_id, is_repost, original_post_id) VALUES (?, TRUE, ?)
---     ON DUPLICATE KEY UPDATE id = id
--- は毎回新しい id を採番するだけでキー衝突が起こらず、ON DUPLICATE KEY UPDATE は
--- 一度も発火しない死んだコードだった。結果として同じ投稿を 3 回リポストすると
--- reposts は 1 行 (PRIMARY KEY (user_id, post_id) により冪等) なのに posts は 3 行になり、
--- reposts_count (reposts 由来) とタイムライン表示 (posts 由来) が食い違う。
---
--- 下記の UNIQUE KEY を足すと「同じユーザーが同じ元投稿をリポストした行」が
--- 重複キーになり、既存の ON DUPLICATE KEY UPDATE が本来の意図どおり機能する。
---
--- 通常投稿・返信への影響がない理由:
---   posts.original_post_id は NULL 許容 (001_init.sql:23) で、通常投稿と返信は
---   original_post_id IS NULL である。MySQL / MariaDB の UNIQUE インデックスは
---   NULL 同士を互いに異なる値として扱うため、original_post_id が NULL の行は
---   何行あっても制約に抵触しない。制約が効くのはリポスト行だけである。
-
--- ---------------------------------------------------------------------------
--- 事前確認 (必須)
---
--- 既に重複行が入っている DB では下記 ALTER は "Duplicate entry" で失敗する。
--- 適用前に必ず次のクエリを実行し、1 行でも返ったら後述のクリーンアップを先に行うこと。
---
---   SELECT user_id, original_post_id, COUNT(*) AS dup_count, MIN(id) AS keep_id
---   FROM posts
---   WHERE original_post_id IS NOT NULL
---   GROUP BY user_id, original_post_id
---   HAVING COUNT(*) > 1;
---
--- クリーンアップ (グループごとに最小の id だけ残し、それ以外を削除する):
---
---   DELETE p FROM posts p
---   JOIN (
---       SELECT user_id, original_post_id, MIN(id) AS keep_id
---       FROM posts
---       WHERE original_post_id IS NOT NULL
---       GROUP BY user_id, original_post_id
---   ) k
---     ON k.user_id = p.user_id
---    AND k.original_post_id = p.original_post_id
---   WHERE p.original_post_id IS NOT NULL
---     AND p.id > k.keep_id;
---
--- 削除前の安全確認: このスキーマに外部キーは 1 本も無く、上の DELETE はカスケードしない。
--- 消える posts.id を指す likes / reposts / notifications / 返信は黙って孤児になるので、
--- 先に件数を数えること (d = 削除対象の id 集合。0 でなければ参照側を手当てしてから削除)。
---
---   WITH d AS (
---     SELECT p.id FROM posts p JOIN (
---       SELECT user_id, original_post_id, MIN(id) AS keep_id FROM posts
---       WHERE original_post_id IS NOT NULL GROUP BY user_id, original_post_id
---     ) k ON k.user_id = p.user_id AND k.original_post_id = p.original_post_id
---     WHERE p.original_post_id IS NOT NULL AND p.id > k.keep_id)
---   SELECT (SELECT COUNT(*) FROM likes         WHERE post_id IN (SELECT id FROM d)) AS likes,
---          (SELECT COUNT(*) FROM reposts       WHERE post_id IN (SELECT id FROM d)) AS reposts,
---          (SELECT COUNT(*) FROM notifications WHERE post_id IN (SELECT id FROM d)) AS notifs,
---          (SELECT COUNT(*) FROM posts WHERE parent_post_id IN (SELECT id FROM d))  AS replies;
---
--- 削除後にもう一度上の確認クエリを実行し、0 行になってから ALTER を流すこと。
--- ---------------------------------------------------------------------------
-
--- ---------------------------------------------------------------------------
--- デプロイ時の注意
---
--- docker-compose.yml:24 は ./migrations を /docker-entrypoint-initdb.d/ に
--- マウントしているが、このディレクトリのスクリプトが実行されるのは
--- DB ボリュームの初回初期化時だけである。既存の DB (mariadb_data ボリュームが
--- 既に存在する環境) では本ファイルは黙って読み飛ばされ、制約は追加されない。
---
--- 既存環境には手動で適用すること:
---
---   docker compose exec -T db \
---     mysql -u sakuravel -ppassword sakuravel < migrations/003_repost_unique.sql
---
--- (事前確認クエリはコメントなので、上記コマンドでは ALTER のみが実行される。
---  確認とクリーンアップは先に対話的に実施しておくこと。)
--- ---------------------------------------------------------------------------
-
+-- 003: 同じユーザーが同じ元投稿を何度リポストしても posts が増えないよう DB 側で止める。
+-- 通常投稿と返信は original_post_id が NULL で、UNIQUE は NULL 同士を別の値として扱うため影響しない。
+-- 【要事前確認】既に重複行があると下の ALTER は "Duplicate entry" で失敗する。先にこれを流し、
+-- 1 行でも返ったらグループごとに MIN(id) だけ残して削除すること（このスキーマに外部キーは無く、
+-- 消した posts.id を指す likes / reposts / notifications / 返信は黙って孤児になる）:
+--   SELECT user_id, original_post_id, COUNT(*), MIN(id) FROM posts
+--   WHERE original_post_id IS NOT NULL GROUP BY user_id, original_post_id HAVING COUNT(*) > 1;
+-- 【注意】initdb マウント経由の SQL はボリューム初回作成時にしか走らず、既存 DB では黙って
+-- 読み飛ばされる。手動適用すること（IF NOT EXISTS が無いので 2 回目は 1061 で失敗する）:
+--   docker compose exec -T db mysql -u sakuravel -ppassword sakuravel < migrations/003_repost_unique.sql
 ALTER TABLE posts ADD UNIQUE KEY uq_posts_user_original (user_id, original_post_id);

@@ -17,7 +17,7 @@ func (h *Handler) GetTrending(w http.ResponseWriter, r *http.Request) {
 		LIMIT 20
 	`)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	defer rows.Close()

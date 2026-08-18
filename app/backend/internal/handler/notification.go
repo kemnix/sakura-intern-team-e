@@ -3,16 +3,20 @@ package handler
 import (
 	"context"
 	"database/sql"
+	"log"
 	"net/http"
-	"sakuravel/internal/realtime"
+	"sakuravel/internal/notify"
+	"time"
 )
+
+// relayWriteTimeout は応答後のイベント行の書き込みに掛ける上限 (DSN に readTimeout が無い)。
+const relayWriteTimeout = 5 * time.Second
 
 func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 	myID, _ := h.currentUserID(r)
 	page, perPage, offset := h.pagination(r)
 
-	// type で種別を絞る（reply / like / repost / follow / footprint）。
-	// 空または all のときは全種別を返す。
+	// type で種別を絞る（reply / like / repost / follow / footprint）。空または all は全種別。
 	typeCond := ""
 	typeArgs := []any{}
 	if t := r.URL.Query().Get("type"); t != "" && t != "all" {
@@ -30,7 +34,7 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 		LIMIT ? OFFSET ?
 	`, listArgs...)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	defer rows.Close()
@@ -57,7 +61,6 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// 対象投稿の本文の抜粋を付ける。
 		// 返信通知の post_id は返信そのものを指すので、返信先の抜粋も添える。
 		var excerpt, parentExcerpt *string
 		if rn.postID != nil {
@@ -145,43 +148,79 @@ func excerptOf(content *string) *string {
 }
 
 // notifExecutor は通知の INSERT に必要な最小限の実行インターフェース。
-// *sql.DB と *sql.Tx の双方が満たすので、通常経路とトランザクション経路で
-// 同じ INSERT を共有できる。
+// *sql.DB と *sql.Tx の双方が満たすので、通常経路とトランザクション経路で共有できる。
 type notifExecutor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-// insertNotification は通知行の INSERT だけを行う。SSE 配信を含まないので、
-// 呼び出し側はコミット後まで配信を遅らせられる。
-// 自分自身への通知は抑止し、その場合は inserted=false を返す。
-func insertNotification(ctx context.Context, exec notifExecutor, userID int64, ntype string, actorID int64, postID *int64) (bool, error) {
+// insertNotificationOnce は通知行だけを渡された exec で書く (イベント行は commit 後に
+// deliverNotification が書く)。post_id が NULL になる follow / footprint では = も UNIQUE も
+// 重複排除に黙って失敗するため、既存判定は NULL 安全等価 <=> でしか書けない。
+func insertNotificationOnce(ctx context.Context, exec notifExecutor, userID int64, ntype string, actorID int64, postID *int64) (bool, error) {
 	if userID == actorID {
 		return false, nil
 	}
-	if _, err := exec.ExecContext(ctx,
-		`INSERT INTO notifications (user_id, type, actor_id, post_id) VALUES (?, ?, ?, ?)`,
+	res, err := exec.ExecContext(ctx,
+		`INSERT INTO notifications (user_id, type, actor_id, post_id)
+		 SELECT ?, ?, ?, ? FROM DUAL
+		 WHERE NOT EXISTS (
+		     SELECT 1 FROM notifications n
+		     WHERE n.user_id = ? AND n.type = ? AND n.actor_id = ? AND n.post_id <=> ?
+		 )`,
 		userID, ntype, actorID, postID,
-	); err != nil {
+		userID, ntype, actorID, postID,
+	)
+	if err != nil {
 		return false, err
 	}
-	return true, nil
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
 }
 
-// publishNotification は SSE 配信だけを行う。
-// 宛先ユーザーが SSE で接続していればバッジ更新用に通知する。
-func publishNotification(h *Handler, userID int64, ntype string, postID *int64) {
-	h.Notifications.Publish(userID, realtime.Event{
-		Type: "notification",
-		Data: map[string]any{"type": ntype, "post_id": postID},
-	})
+// insertNotificationOnceRetry はロック競合の敗者になったときだけ 1 度やり直す。
+// 敗者はトランザクションが丸ごと巻き戻されるだけなので、同じ文をもう一度流せばよい。
+func insertNotificationOnceRetry(ctx context.Context, exec notifExecutor, userID int64, ntype string, actorID int64, postID *int64) (bool, error) {
+	inserted, err := insertNotificationOnce(ctx, exec, userID, ntype, actorID, postID)
+	if err != nil && isRetryableLockError(err) {
+		log.Printf("notify: notification insert lost a lock conflict, retrying once (user=%d type=%s actor=%d): %v",
+			userID, ntype, actorID, err)
+		inserted, err = insertNotificationOnce(ctx, exec, userID, ntype, actorID, postID)
+	}
+	return inserted, err
 }
 
-// createNotification は INSERT と SSE 配信をまとめて行う従来どおりの入口で、
-// 署名も挙動（自己通知の抑止・エラー握り潰し）も変更していない。
-func createNotification(h *Handler, r *http.Request, userID int64, ntype string, actorID int64, postID *int64) {
-	inserted, err := insertNotification(r.Context(), h.DB, userID, ntype, actorID, postID)
-	if err != nil || !inserted {
+// createNotificationOnce は通知行の INSERT と、その後の配信をまとめて行う。通知の失敗で
+// 本体の操作まで失敗させないので戻り値は無いが、握り潰すと誰にも気付かれないのでログに出す。
+// 明示的なトランザクションで囲まないのは、同時いいねのデッドロック窓を広げないため。
+func createNotificationOnce(h *Handler, r *http.Request, userID int64, ntype string, actorID int64, postID *int64) {
+	if userID == actorID {
 		return
 	}
-	publishNotification(h, userID, ntype, postID)
+	inserted, err := insertNotificationOnceRetry(r.Context(), h.DB, userID, ntype, actorID, postID)
+	if err != nil {
+		log.Printf("notify: create notification (user=%d type=%s actor=%d): %v",
+			userID, ntype, actorID, err)
+		return
+	}
+	if !inserted {
+		return
+	}
+	deliverNotification(r.Context(), h, userID, ntype, postID)
+}
+
+// deliverNotification は commit 済みの通知を配る。自プロセスのサブスクライバーへ即時配信し、
+// 他プロセス向けにイベント行を書く (必ず commit 後。理由は notify.Publish の注記)。自分の
+// ポーラも同じ行を読むので同一プロセスでは 2 回届くが、配信保証は at-least-once で足りる。
+func deliverNotification(ctx context.Context, h *Handler, userID int64, ntype string, postID *int64) {
+	h.Notifications.Publish(userID, notify.NotificationEvent(ntype, postID))
+
+	// 応答を返した直後にリクエストの ctx がキャンセルされてもイベント行は書き切る。
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), relayWriteTimeout)
+	defer cancel()
+	if err := notify.Publish(writeCtx, h.DB, userID, ntype, postID); err != nil {
+		log.Printf("notify: publish event (user=%d type=%s): %v", userID, ntype, err)
+	}
 }

@@ -37,7 +37,7 @@ func (h *Handler) searchPosts(w http.ResponseWriter, r *http.Request, q string, 
 		LIMIT ? OFFSET ?
 	`, pattern, perPage, offset)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	defer rows.Close()
@@ -79,7 +79,7 @@ func (h *Handler) searchUsers(w http.ResponseWriter, r *http.Request, q string, 
 		LIMIT ? OFFSET ?
 	`, pattern, pattern, perPage, offset)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	defer rows.Close()

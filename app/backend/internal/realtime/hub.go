@@ -3,7 +3,7 @@ package realtime
 
 import "sync"
 
-// subBuffer は購読者ごとのバッファ数。あふれた場合そのイベントは捨てられる。
+// subBuffer はサブスクライバーごとのバッファ数。あふれた場合そのイベントは捨てられる。
 const subBuffer = 8
 
 type Event struct {
@@ -11,7 +11,7 @@ type Event struct {
 	Data any    `json:"data"`
 }
 
-// Hub は key（ユーザーID / スレッドのルート投稿ID）ごとに購読者を束ねる。
+// Hub は key（ユーザーID / スレッドのルート投稿ID）ごとにサブスクライバーを束ねる。
 type Hub struct {
 	mu   sync.Mutex
 	subs map[int64]map[chan Event]struct{}
@@ -49,7 +49,18 @@ func (h *Hub) Subscribe(key int64) (<-chan Event, func()) {
 	return ch, unsubscribe
 }
 
-// Publish は key を購読している全員にイベントを送る。購読者がいなければ何もしない。
+// HasSubscribers は key 宛てのサブスクライバーがこのプロセスにいるかを返す。
+// サブスクライバーのいない宛先に対する配信処理を呼び出し側が丸ごと省くために使う。
+func (h *Hub) HasSubscribers(key int64) bool {
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subs[key]) > 0
+}
+
+// Publish は key を購読している全員にイベントを送る。サブスクライバーがいなければ何もしない。
 func (h *Hub) Publish(key int64, ev Event) {
 	if h == nil {
 		return
@@ -59,7 +70,7 @@ func (h *Hub) Publish(key int64, ev Event) {
 	for ch := range h.subs[key] {
 		select {
 		case ch <- ev:
-		default: // バッファがあふれている購読者は取りこぼす
+		default: // バッファがあふれているサブスクライバーは取りこぼす
 		}
 	}
 }

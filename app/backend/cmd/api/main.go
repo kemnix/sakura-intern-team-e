@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	appdb "sakuravel/internal/db"
 	"sakuravel/internal/handler"
 	"sakuravel/internal/middleware"
+	"sakuravel/internal/notify"
 	"sakuravel/internal/realtime"
 )
 
@@ -23,6 +27,16 @@ func main() {
 	}
 	auth := &middleware.Auth{DB: db}
 
+	// SSE バス。複数の API プロセスが 1 つの DB を共有する構成で、他プロセスで発生した通知と
+	// 返信を自分がつないでいるサブスクライバーへ届ける。Start はポーラのカーソルを確定して
+	// から戻るので、HTTP の受付はその後に始める（確定前につないだ分は取りこぼすため）。
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	bus := notify.New(db, h.Notifications, h.Threads, h.ReplyEvent)
+	if err := bus.Start(ctx); err != nil {
+		log.Fatal(err)
+	}
+
 	mux := http.NewServeMux()
 
 	// CORS ミドルウェア
@@ -32,8 +46,16 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("starting server on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	// ListenAndServe には戻る経路が無いので待つのはシグナル側。main が戻れば
+	// プロセスは終了する（HTTP の graceful shutdown はここでは扱わない）。
+	go func() {
+		log.Printf("starting server on :%s", port)
+		log.Fatal(http.ListenAndServe(":"+port, mux))
+	}()
+
+	<-ctx.Done()
+	log.Println("shutting down: stopping SSE bus")
+	bus.Wait()
 }
 
 func routes(h *handler.Handler, auth *middleware.Auth) http.Handler {
