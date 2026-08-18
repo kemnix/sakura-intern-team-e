@@ -6,6 +6,9 @@ import (
 	"net/http"
 )
 
+// GetTimeline はタイムラインを返す。recommended フィードでは、いいね数を
+// 派生テーブルで先に集計してから posts に結合する。posts を直接 GROUP BY すると
+// TEXT 型の content がキーに含まれ、ディスク上の一時テーブルが強制されるため。
 func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 	myID, _ := h.currentUserID(r)
 	page, perPage, offset := h.pagination(r)
@@ -28,10 +31,14 @@ func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 		rows, err = h.DB.QueryContext(r.Context(), `
 			SELECT p.id, p.user_id, p.content, p.is_repost, p.original_post_id, p.created_at
 			FROM posts p
-			LEFT JOIN likes l ON l.post_id = p.id AND l.created_at > NOW() - INTERVAL 24 HOUR
+			LEFT JOIN (
+				SELECT post_id, COUNT(*) AS recent_likes
+				FROM likes
+				WHERE created_at > NOW() - INTERVAL 24 HOUR
+				GROUP BY post_id
+			) rl ON rl.post_id = p.id
 			WHERE p.parent_post_id IS NULL
-			GROUP BY p.id, p.user_id, p.content, p.is_repost, p.original_post_id, p.created_at
-			ORDER BY COUNT(l.post_id) DESC, p.created_at DESC, p.id DESC
+			ORDER BY COALESCE(rl.recent_likes, 0) DESC, p.created_at DESC, p.id DESC
 			LIMIT ? OFFSET ?
 		`, perPage, offset)
 	default: // "following"
