@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"sakuravel/internal/notify"
@@ -11,7 +12,7 @@ import (
 )
 
 // CreateReply は指定した投稿への返信を作成する。返信も posts の 1 行として保存する。
-// 通知は createNotificationOnce 経由にして、同じ通知が二重に積まれないようにする。
+// 存在確認と INSERT を 1 文にするのは、その間に親が消えると親のない返信が残るため。
 func (h *Handler) CreateReply(w http.ResponseWriter, r *http.Request) {
 	myID, _ := h.currentUserID(r)
 
@@ -29,25 +30,35 @@ func (h *Handler) CreateReply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	parentID := req.PostID
+	// 宛先も配信キーも INSERT より前に読む。後から読むと親が消えた隙に通知が落ち、配信キーが
+	// サブスクライブしている側とずれる。sql.ErrNoRows は下の INSERT が 0 行になり 404 で返る経路に任せる。
 	var parentAuthorID int64
-	err := h.DB.QueryRowContext(r.Context(),
+	authorErr := h.DB.QueryRowContext(r.Context(),
 		`SELECT user_id FROM posts WHERE id = ?`, parentID,
 	).Scan(&parentAuthorID)
-	if err == sql.ErrNoRows {
-		h.respondError(w, http.StatusNotFound, "post not found")
+	if authorErr != nil && !errors.Is(authorErr, sql.ErrNoRows) {
+		h.serverError(w, r, authorErr)
 		return
 	}
-	if err != nil {
-		h.serverError(w, r, err)
-		return
-	}
+	rootID := h.threadRootID(r, parentID)
 
 	res, err := h.DB.ExecContext(r.Context(),
-		`INSERT INTO posts (user_id, content, parent_post_id) VALUES (?, ?, ?)`,
-		myID, req.Content, parentID,
+		`INSERT INTO posts (user_id, content, parent_post_id)
+		 SELECT ?, ?, ? FROM DUAL
+		 WHERE EXISTS (SELECT 1 FROM posts p WHERE p.id = ?)`,
+		myID, req.Content, parentID, parentID,
 	)
 	if err != nil {
 		h.serverError(w, r, err)
+		return
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	if affected == 0 {
+		h.respondError(w, http.StatusNotFound, "post not found")
 		return
 	}
 	postID, err := res.LastInsertId()
@@ -59,12 +70,13 @@ func (h *Handler) CreateReply(w http.ResponseWriter, r *http.Request) {
 	post, _ := h.fetchPost(r, postID, myID)
 
 	// 通知は直接の返信先の著者にのみ送る
-	createNotificationOnce(h, r, parentAuthorID, "reply", myID, &postID)
+	if authorErr == nil {
+		createNotificationOnce(h, r, parentAuthorID, "reply", myID, &postID)
+	}
 
 	// 自プロセスのサブスクライバーにもここで直接は配らず、必ずイベント行を経由させる。本文を
 	// 持つイベントなので、直接配信とポーラ経由の両方を通すと同じ返信が二重に描かれてしまう。
 	// イベント行は commit の後に書き、応答後に ctx がキャンセルされても書き切る。
-	rootID := h.threadRootID(r, parentID)
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), relayWriteTimeout)
 	defer cancel()
 	if err := notify.PublishReply(writeCtx, h.DB, rootID, postID); err != nil {
