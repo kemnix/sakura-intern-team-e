@@ -3,6 +3,7 @@ package handler
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 )
 
@@ -157,11 +158,22 @@ func (h *Handler) Follow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// フォロー前に対象ユーザーが存在するか確認する。外部キーが無いので、
+	// 存在しないユーザーへのフォローを許すと孤児行が残る。
+	if _, err := h.fetchUser(r, targetID); errors.Is(err, sql.ErrNoRows) {
+		h.respondError(w, http.StatusNotFound, "user not found")
+		return
+	} else if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+
 	_, err = h.DB.ExecContext(r.Context(),
 		`INSERT INTO follows (follower_id, followee_id) VALUES (?, ?)
 		 ON DUPLICATE KEY UPDATE follower_id = follower_id`,
 		myID, targetID,
 	)
+
 	if err != nil {
 		h.serverError(w, r, err)
 		return
