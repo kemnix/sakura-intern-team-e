@@ -7,17 +7,8 @@ import (
 )
 
 // TestRepostIsIdempotent は「リポストが原子的でも冪等でもなかった」バグの回帰テスト。
-//
-// 修正前の Repost は reposts / posts / notifications への書き込みが別々の文で、
-// posts への INSERT ... ON DUPLICATE KEY UPDATE id = id は死んだコードだった
-// （posts は PRIMARY KEY (id) の AUTO_INCREMENT しか持たず、INSERT が id を
-// 指定しないためキー衝突が起きえない — migrations/003_repost_unique.sql 参照）。
-// その結果 POST /reposts を 3 回叩くと reposts は 1 行なのに posts は 3 行、
-// notifications も 3 行になり、reposts_count（reposts 由来）とタイムライン表示
-// （posts 由来）が食い違った。
-//
-// このテストは同じ (user, post) への連打後に 3 テーブルとも 1 行だけであること、
-// および毎回のレスポンスの reposts_count が 1 のままであることを保証する。
+// 同じ (user, post) への連打後に reposts / posts / notifications がいずれも 1 行だけで、
+// 毎回のレスポンスの reposts_count も 1 のままであることを保証する。
 func TestRepostIsIdempotent(t *testing.T) {
 	f := newFixture(t)
 
@@ -67,11 +58,8 @@ func TestRepostIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestRepostNonexistentPostReturns404 も同じバグの回帰テスト。
-//
-// posts には外部キーが無いため、修正前は存在しない post_id へのリポストでも
-// reposts / posts / notifications に孤児行が書き込まれ、200 が返っていた。
-// 修正後は元投稿の存在確認が書き込みより先に走り、404 を返して一切書き込まない。
+// TestRepostNonexistentPostReturns404 も同じバグの回帰テスト。posts に外部キーが
+// 無いため、存在しない post_id へのリポストが孤児行を書き込まないことを確認する。
 func TestRepostNonexistentPostReturns404(t *testing.T) {
 	f := newFixture(t)
 

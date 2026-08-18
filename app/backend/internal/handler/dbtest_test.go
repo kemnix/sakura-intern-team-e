@@ -74,6 +74,17 @@ type fixture struct {
 // 本物のミドルウェア + 本物のハンドラを httptest サーバに載せる。
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+	return newFixtureWithRoutes(t, nil)
+}
+
+// newFixtureWithRoutes は newFixture の実体で、既定のルートに続けて
+// テスト固有のルートを登録できる。同時実行テストが /likes や
+// /users/{user_id}/follow を必要とするので配線だけを差し替え可能にしてある。
+func newFixtureWithRoutes(
+	t *testing.T,
+	extra func(mux *http.ServeMux, h *Handler, auth *middleware.Auth),
+) *fixture {
+	t.Helper()
 
 	db := openTestDB(t)
 	h := &Handler{
@@ -87,6 +98,9 @@ func newFixture(t *testing.T) *fixture {
 	mux.HandleFunc("POST /register", h.Register)
 	mux.Handle("POST /reposts", auth.Required(http.HandlerFunc(h.Repost)))
 	mux.Handle("GET /posts/{id}", auth.Optional(http.HandlerFunc(h.GetPost)))
+	if extra != nil {
+		extra(mux, h, auth)
+	}
 
 	srv := httptest.NewServer(mux)
 	f := &fixture{t: t, db: db, h: h, srv: srv}
@@ -106,7 +120,15 @@ func (f *fixture) cleanup() {
 			args  []any
 		}{
 			{`DELETE FROM notifications WHERE user_id = ? OR actor_id = ?`, []any{id, id}},
+			// fan-out 用のイベント行もテストが作る側なので一緒に消す。返信のイベントは
+			// 宛先がスレッドの根の投稿 ID なので、投稿を消す前に投稿側から辿って消す。
+			{`DELETE FROM sse_events
+			  WHERE (kind = 'notification' AND subject_id = ?)
+			     OR (kind = 'reply' AND post_id IN (SELECT id FROM posts WHERE user_id = ?))`,
+				[]any{id, id}},
 			{`DELETE FROM reposts WHERE user_id = ?`, []any{id}},
+			// フォローは自分が張った側も張られた側も、このテストが作った行なので消す。
+			{`DELETE FROM follows WHERE follower_id = ? OR followee_id = ?`, []any{id, id}},
 			{`DELETE FROM likes WHERE user_id = ?`, []any{id}},
 			{`DELETE FROM footprints WHERE user_id = ? OR visitor_id = ?`, []any{id, id}},
 			{`DELETE FROM posts WHERE user_id = ?`, []any{id}},

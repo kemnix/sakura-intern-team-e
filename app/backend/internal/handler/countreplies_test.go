@@ -7,15 +7,9 @@ import (
 	"testing"
 )
 
-// TestRepliesCountBeyondMaxThreadDepth は「50 階層より深いスレッドで
-// 返信数が過少カウントされた」バグの回帰テスト。
-//
-// 修正前の countReplies は子孫を 1 ノードずつ辿り、maxThreadDepth = 50 で
-// 打ち切っていたため、それより深いスレッドでは replies_count が黙って
-// 実際より小さい値になっていた。修正後は深さ上限の無い再帰 CTE 1 本で数える。
-//
-// ここでは 60 段の直線スレッドを作り、ルート投稿の replies_count が
-// 50 で頭打ちにならず 60 を返すことを HTTP 経路（GET /posts/{id}）で確認する。
+// TestRepliesCountBeyondMaxThreadDepth は「50 階層より深いスレッドで返信数が
+// 過少カウントされた」バグの回帰テスト。60 段の直線スレッドを作り、ルート投稿の
+// replies_count が 50 で頭打ちにならず 60 を返すことを確認する。
 func TestRepliesCountBeyondMaxThreadDepth(t *testing.T) {
 	f := newFixture(t)
 
