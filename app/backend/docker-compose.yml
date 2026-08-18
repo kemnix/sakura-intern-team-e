@@ -6,6 +6,10 @@ services:
     environment:
       - DATABASE_URL=sakuravel:password@tcp(db:3306)/sakuravel?parseTime=true&charset=utf8mb4
       - PORT=8080
+      # コード側の既定値と同じ。ここに書いておかないとコンテナに届かず、
+      # デプロイ環境からプールを調整できない。
+      - DB_MAX_OPEN_CONNS=10
+      - DB_MAX_IDLE_CONNS=5
     depends_on:
       db:
         condition: service_healthy
