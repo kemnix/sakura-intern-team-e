@@ -76,7 +76,7 @@ func (h *Handler) Like(w http.ResponseWriter, r *http.Request) {
 		 ON DUPLICATE KEY UPDATE user_id = user_id`,
 		myID, req.PostID,
 	); err != nil {
-		h.serverError(w, r, err)
+		h.respondWriteError(w, r, err)
 		return
 	}
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-sql-driver/mysql"
 )
@@ -47,11 +48,7 @@ func (h *Handler) Repost(w http.ResponseWriter, r *http.Request) {
 		notified, err = repostOnce(r.Context(), h.DB, myID, req.PostID, postOwnerID)
 	}
 	if err != nil {
-		if isRetryableLockError(err) {
-			log.Printf("repost: lock conflict persisted after retry (user=%d post=%d): %v",
-				myID, req.PostID, err)
-		}
-		h.serverError(w, r, err)
+		h.respondWriteError(w, r, err)
 		return
 	}
 	// イベント行は commit の後に書く（理由は notify.Publish の注記）。
@@ -126,6 +123,23 @@ func isRetryableLockError(err error) bool {
 		return false
 	}
 	return mysqlErr.Number == 1213 || mysqlErr.Number == 1467
+}
+
+// isMissingPostError は参照先の投稿が消えている外部キー違反（error 1452）かを判定する。
+// users 側の外部キーも同じ番号を出すので、投稿を参照する制約に限る。
+func isMissingPostError(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1452 &&
+		strings.Contains(mysqlErr.Message, "REFERENCES `posts`")
+}
+
+// respondWriteError は書こうとした投稿が消えていたときだけ 404 にする。
+func (h *Handler) respondWriteError(w http.ResponseWriter, r *http.Request, err error) {
+	if isMissingPostError(err) {
+		h.respondError(w, http.StatusNotFound, "post not found")
+		return
+	}
+	h.serverError(w, r, err)
 }
 
 // ensureRepostPost はリポスト由来の posts 行が無ければ 1 行だけ作る。検査と INSERT の間の
