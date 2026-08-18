@@ -356,20 +356,23 @@ func (h *Handler) countReplies(r *http.Request, postID int64) int {
 	return total
 }
 
-// threadRootID はスレッドの起点となる投稿IDを返す。
+// threadRootID はスレッドの起点となる投稿IDを返す。祖先が消えて根に届かないときは、
+// 同じ部分木が同じキーに解決されるよう、たどれた最上位の親IDを返す。
 func (h *Handler) threadRootID(r *http.Request, postID int64) int64 {
-	current := postID
-	for i := 0; i < maxThreadDepth; i++ {
-		var parent *int64
-		err := h.DB.QueryRowContext(r.Context(),
-			`SELECT parent_post_id FROM posts WHERE id = ?`, current,
-		).Scan(&parent)
-		if err != nil || parent == nil {
-			return current
-		}
-		current = *parent
+	var rootID int64
+	err := h.DB.QueryRowContext(r.Context(), `
+		WITH RECURSIVE ancestors AS (
+			SELECT id, parent_post_id, 0 AS depth FROM posts WHERE id = ?
+			UNION ALL
+			SELECT p.id, p.parent_post_id, a.depth + 1 FROM posts p JOIN ancestors a ON p.id = a.parent_post_id
+		)
+		SELECT COALESCE(parent_post_id, id) FROM ancestors ORDER BY depth DESC LIMIT 1
+	`, postID).Scan(&rootID)
+	if err != nil {
+		log.Printf("thread root lookup failed (post=%d): %v; falling back to %d", postID, err, postID)
+		return postID
 	}
-	return current
+	return rootID
 }
 
 func pathID(r *http.Request, key string) (int64, error) {
