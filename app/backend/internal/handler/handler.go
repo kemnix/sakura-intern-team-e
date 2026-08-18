@@ -3,6 +3,7 @@ package handler
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sakuravel/internal/middleware"
 	"sakuravel/internal/model"
@@ -29,6 +30,13 @@ func (h *Handler) respondJSON(w http.ResponseWriter, status int, v any) {
 
 func (h *Handler) respondError(w http.ResponseWriter, status int, msg string) {
 	h.respondJSON(w, status, map[string]string{"error": msg})
+}
+
+// serverError は 500 応答の定型。応答本文は固定なので、原因はここでログにだけ残す。
+// 呼び出し側は続けて return すること。
+func (h *Handler) serverError(w http.ResponseWriter, r *http.Request, err error) {
+	log.Printf("server error: %s %s: %v", r.Method, r.URL.Path, err)
+	h.respondError(w, http.StatusInternalServerError, "server error")
 }
 
 func (h *Handler) currentUserID(r *http.Request) (int64, bool) {
@@ -158,9 +166,7 @@ func placeholders(n int) string {
 // maxRepostDepth はリポストの元投稿を辿る深さの上限（相互リポスト等の循環に対する保険）。
 const maxRepostDepth = 50
 
-// fetchPostsBulk は複数の投稿をまとめて取得する fetchPost の一括版。
-// 本体＋著者＋各種集計を1クエリ、返信数を再帰CTEの1クエリ、返信先と元投稿をそれぞれ1クエリで解決し、
-// 引数 postIDs と同じ順序で返す（著者が存在しない等で取得できなかった投稿は結果から除かれる）。
+// fetchPostsBulk は fetchPost の一括版で、引数と同じ順序で返す（取得できなかった投稿は除く）。
 // fetchPost とまったく同じ JSON を返すことが前提なので、model.Post の形や
 // fetchPost / fetchUser が埋める項目を変えるときは必ず両方を同時に更新すること。
 func (h *Handler) fetchPostsBulk(r *http.Request, postIDs []int64, viewerID int64) ([]model.Post, error) {
@@ -332,10 +338,8 @@ func (h *Handler) applyReplyTo(r *http.Request, byID map[int64]model.Post) {
 // maxThreadDepth はスレッドを辿る深さの上限（循環や極端に深いスレッドの保険）。
 const maxThreadDepth = 50
 
-// countReplies は投稿にぶら下がる返信の数を返す。ネストした返信も含めた合計。
-// 子孫を1ノードずつ辿るのではなく、再帰CTEによる単一クエリで数えるため、
-// 発行クエリ数はスレッドの大きさによらず常に1件になる。
-// 深さ上限も撤廃したので、50階層より深いスレッドでも実際の子孫数を返す（従来は過少カウントだった）。
+// countReplies は投稿にぶら下がる返信の数を、ネストした返信も含めて返す。
+// 再帰CTEの単一クエリで数えるので、発行クエリ数も深さの上限もスレッドの大きさに依らない。
 func (h *Handler) countReplies(r *http.Request, postID int64) int {
 	var total int
 	err := h.DB.QueryRowContext(r.Context(), `

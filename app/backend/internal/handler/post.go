@@ -6,11 +6,9 @@ import (
 	"net/http"
 )
 
-// GetTimeline はタイムラインを返す。recommended フィードでは、いいね数を
-// 派生テーブルで先に集計してから posts に結合する。posts を直接 GROUP BY すると
-// TEXT 型の content がキーに含まれ、ディスク上の一時テーブルが強制されるため。
-// 投稿の肉付けは fetchPost の1件ずつの呼び出しではなく fetchPostsBulk にまとめており、
-// 1ページあたりの発行クエリ数は投稿件数に比例しない。
+// GetTimeline はタイムラインを返す。recommended フィードでいいね数を派生テーブルに
+// 先に集計するのは、posts を直接 GROUP BY すると TEXT 型の content がキーに含まれ、
+// ディスク上の一時テーブルが強制されるためである。
 func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 	myID, _ := h.currentUserID(r)
 	page, perPage, offset := h.pagination(r)
@@ -56,7 +54,7 @@ func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 		`, myID, perPage, offset)
 	}
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	defer rows.Close()
@@ -73,7 +71,7 @@ func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 	// 1件ずつ fetchPost を呼ぶと投稿数に比例してクエリが増えるため、まとめて取得する
 	posts, err := h.fetchPostsBulk(r, postIDs, myID)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -121,12 +119,12 @@ func (h *Handler) CreatePost(w http.ResponseWriter, r *http.Request) {
 		myID, req.Content,
 	)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	postID, err := res.LastInsertId()
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -154,7 +152,7 @@ func (h *Handler) GetUserPosts(w http.ResponseWriter, r *http.Request) {
 		ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
 	`, userID, perPage, offset)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	defer rows.Close()
@@ -201,7 +199,7 @@ func (h *Handler) GetPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	h.respondJSON(w, http.StatusOK, map[string]any{"post": post})
@@ -219,7 +217,7 @@ func (h *Handler) DeletePost(w http.ResponseWriter, r *http.Request) {
 		`DELETE FROM posts WHERE id = ? AND user_id = ?`, postID, myID,
 	)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	n, _ := res.RowsAffected()
