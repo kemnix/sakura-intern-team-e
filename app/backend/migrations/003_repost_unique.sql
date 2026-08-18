@@ -46,6 +46,21 @@
 --   WHERE p.original_post_id IS NOT NULL
 --     AND p.id > k.keep_id;
 --
+-- 削除前の安全確認: このスキーマに外部キーは 1 本も無く、上の DELETE はカスケードしない。
+-- 消える posts.id を指す likes / reposts / notifications / 返信は黙って孤児になるので、
+-- 先に件数を数えること (d = 削除対象の id 集合。0 でなければ参照側を手当てしてから削除)。
+--
+--   WITH d AS (
+--     SELECT p.id FROM posts p JOIN (
+--       SELECT user_id, original_post_id, MIN(id) AS keep_id FROM posts
+--       WHERE original_post_id IS NOT NULL GROUP BY user_id, original_post_id
+--     ) k ON k.user_id = p.user_id AND k.original_post_id = p.original_post_id
+--     WHERE p.original_post_id IS NOT NULL AND p.id > k.keep_id)
+--   SELECT (SELECT COUNT(*) FROM likes         WHERE post_id IN (SELECT id FROM d)) AS likes,
+--          (SELECT COUNT(*) FROM reposts       WHERE post_id IN (SELECT id FROM d)) AS reposts,
+--          (SELECT COUNT(*) FROM notifications WHERE post_id IN (SELECT id FROM d)) AS notifs,
+--          (SELECT COUNT(*) FROM posts WHERE parent_post_id IN (SELECT id FROM d))  AS replies;
+--
 -- 削除後にもう一度上の確認クエリを実行し、0 行になってから ALTER を流すこと。
 -- ---------------------------------------------------------------------------
 
