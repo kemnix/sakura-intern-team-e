@@ -1,17 +1,35 @@
 services:
+  # 単一オリジンの入口（本番の AppRun 構成と同じ経路をローカルでも再現する）
+  # ブラウザは http://localhost にアクセスし、/api だけ api へ転送される
+  # 外部に公開するのはこの 80 番だけ（api / db / frontend はすべて内部のみ）
+  proxy:
+    build: ../proxy
+    ports:
+      # ホスト側で 80 が埋まっている場合は PROXY_HOST_PORT で退避できる。
+      # 例: PROXY_HOST_PORT=8000 docker compose up -d
+      - "${PROXY_HOST_PORT:-80}:8080"
+    environment:
+      - API_UPSTREAM=api:8080
+      - FRONT_UPSTREAM=frontend:3000
+      - API_HOST=localhost
+      - FRONT_HOST=localhost
+    depends_on:
+      - api
+      - frontend
+    restart: on-failure
+
   api:
     build: .
-    ports:
-      - "${API_HOST_PORT:-8080}:8080"
+    # 公開は proxy 経由のみ（直接叩きたい場合は docker compose exec などで）
     environment:
       - DATABASE_URL=sakuravel:password@tcp(db:3306)/sakuravel?parseTime=true&charset=utf8mb4
       - PORT=8080
       # コード側の既定値と同じ。ここに書いておかないとコンテナに届かず、
       # デプロイ環境からプールを調整できない。
-      - DB_MAX_OPEN_CONNS=10
-      - DB_MAX_IDLE_CONNS=5
-      # ブラウザから見たフロントの出所。FRONTEND_HOST_PORT を変えたら CORS も追随させる。
-      - ALLOWED_ORIGIN=http://localhost:${FRONTEND_HOST_PORT:-3000}
+      - DB_MAX_OPEN_CONNS=${DB_MAX_OPEN_CONNS:-10}
+      - DB_MAX_IDLE_CONNS=${DB_MAX_IDLE_CONNS:-5}
+      # proxy 経由の単一オリジン化により ALLOWED_ORIGIN は不要になった
+      # （フロントとAPIが同一オリジン http://localhost になるため）
     depends_on:
       db:
         condition: service_healthy
@@ -24,10 +42,8 @@ services:
       MYSQL_USER: sakuravel
       MYSQL_PASSWORD: password
       MYSQL_ROOT_PASSWORD: password
-    ports:
-      # ホスト側で 3306 が埋まっている場合は DB_HOST_PORT で退避できる。
-      # 例: DB_HOST_PORT=13306 docker compose up -d
-      - "${DB_HOST_PORT:-3306}:3306"
+    # ホストへは非公開（seed 投入は --network app-network で db:3306 に接続できる。
+    # CLI で入る場合: docker compose exec db mysql -usakuravel -ppassword sakuravel）
     volumes:
       - ./migrations:/docker-entrypoint-initdb.d/
       - mariadb_data:/var/lib/mysql
@@ -40,11 +56,10 @@ services:
   frontend:
     image: ${REGISTRY_HOST:-<作成したコンテナレジストリのホスト名>}/intern2026-app-frontend:latest
     platform: linux/amd64
-    ports:
-      - "${FRONTEND_HOST_PORT:-3000}:3000"
+    # 公開は proxy 経由のみ（ports なし）
     environment:
-      # ブラウザが叩く API の URL。API_HOST_PORT を変えたらここも追随する必要がある。
-      - API_URL=http://localhost:${API_HOST_PORT:-8080}
+      # ブラウザから見た API のパス（proxy が同一オリジンで振り分ける）
+      - API_URL=/api
     depends_on:
       - api
     restart: on-failure

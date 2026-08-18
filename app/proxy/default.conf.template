@@ -1,0 +1,42 @@
+# 単一オリジンの入口。/api を api へ、それ以外を frontend へ振り分ける。
+# ローカル(docker compose)と AppRun の両方で同じイメージを使う:
+#   - ローカル : API_UPSTREAM=api:8080 / FRONT_UPSTREAM=frontend:3000（サービス名で直接）
+#   - AppRun  : 両方とも LB のプライベートアドレス（Host ラベルで宛先が決まる）
+# 環境変数: API_UPSTREAM / FRONT_UPSTREAM / API_HOST / FRONT_HOST
+
+server {
+    listen 8080;
+
+    # ヘルスチェック用（上流には依存しない）
+    location = /nginx-healthz {
+        return 200 "ok\n";
+    }
+
+    # 例外: /api/config は frontend 自身のルート（ブラウザに API_URL を伝える設定エンドポイント）
+    location = /api/config {
+        proxy_pass http://${FRONT_UPSTREAM};
+        proxy_set_header Host ${FRONT_HOST};
+    }
+
+    # API（/api プレフィックスを剥がして転送）
+    location /api/ {
+        proxy_pass http://${API_UPSTREAM}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${API_HOST};
+        proxy_set_header Connection "";
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE（/api/notifications/stream, /api/posts/:id/thread/stream）対策
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+    }
+
+    # frontend
+    location / {
+        proxy_pass http://${FRONT_UPSTREAM};
+        proxy_set_header Host ${FRONT_HOST};
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
