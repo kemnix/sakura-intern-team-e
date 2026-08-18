@@ -51,7 +51,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -66,20 +66,20 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, err := res.LastInsertId()
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 
 	user, err := h.fetchUser(r, userID)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 
 	// 登録と同時にセッションを発行してログイン状態にする
 	token, err := generateToken()
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	expiresAt := time.Now().Add(24 * time.Hour)
@@ -88,7 +88,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		token, userID, expiresAt,
 	)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 	http.SetCookie(w, h.sessionCookie(token, expiresAt))
@@ -123,7 +123,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	token, err := generateToken()
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -133,7 +133,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		token, userID, expiresAt,
 	)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, "server error")
+		h.serverError(w, r, err)
 		return
 	}
 

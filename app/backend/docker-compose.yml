@@ -30,6 +30,12 @@ services:
       - DB_MAX_IDLE_CONNS=${DB_MAX_IDLE_CONNS:-5}
       # proxy 経由の単一オリジン化により ALLOWED_ORIGIN は不要になった
       # （フロントとAPIが同一オリジン http://localhost になるため）
+      # 通知バス。未設定ならコード側の既定値が使われる。
+      - NOTIFY_POLL_INTERVAL_MS
+      - NOTIFY_POLL_BATCH
+      - NOTIFY_GC_INTERVAL_SEC
+      - NOTIFY_GC_BATCH
+      - NOTIFY_RETENTION_SEC
     depends_on:
       db:
         condition: service_healthy
