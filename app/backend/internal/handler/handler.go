@@ -110,7 +110,7 @@ func (h *Handler) fetchPost(r *http.Request, postID, viewerID int64) (model.Post
 		`SELECT COUNT(*) FROM reposts WHERE post_id = ?`, p.ID,
 	).Scan(&p.RepostsCount)
 
-	p.RepliesCount = h.countReplies(r, p.ID, 0)
+	p.RepliesCount = h.countReplies(r, p.ID)
 
 	if viewerID > 0 {
 		h.DB.QueryRowContext(r.Context(),
@@ -152,28 +152,21 @@ func (h *Handler) fetchPost(r *http.Request, postID, viewerID int64) (model.Post
 const maxThreadDepth = 50
 
 // countReplies は投稿にぶら下がる返信の数を返す。ネストした返信も含めた合計。
-func (h *Handler) countReplies(r *http.Request, postID int64, depth int) int {
-	if depth >= maxThreadDepth {
-		return 0
-	}
-
-	rows, err := h.DB.QueryContext(r.Context(),
-		`SELECT id FROM posts WHERE parent_post_id = ?`, postID)
+// 子孫を1ノードずつ辿るのではなく、再帰CTEによる単一クエリで数えるため、
+// 発行クエリ数はスレッドの大きさによらず常に1件になる。
+// 深さ上限も撤廃したので、50階層より深いスレッドでも実際の子孫数を返す（従来は過少カウントだった）。
+func (h *Handler) countReplies(r *http.Request, postID int64) int {
+	var total int
+	err := h.DB.QueryRowContext(r.Context(), `
+		WITH RECURSIVE descendants AS (
+			SELECT id FROM posts WHERE parent_post_id = ?
+			UNION ALL
+			SELECT p.id FROM posts p JOIN descendants d ON p.parent_post_id = d.id
+		)
+		SELECT COUNT(*) FROM descendants
+	`, postID).Scan(&total)
 	if err != nil {
 		return 0
-	}
-
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		rows.Scan(&id)
-		ids = append(ids, id)
-	}
-	rows.Close()
-
-	total := len(ids)
-	for _, id := range ids {
-		total += h.countReplies(r, id, depth+1)
 	}
 	return total
 }
