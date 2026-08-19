@@ -29,10 +29,11 @@ func openTestDB(t *testing.T) *sql.DB {
 
 	dsn := os.Getenv(testDBEnv)
 	if dsn == "" {
-		t.Skipf("%s が未設定のため skip。実行するには DB を用意して次を実行する:\n"+
-			"  %s='sakuravel:password@tcp(127.0.0.1:3306)/sakuravel?parseTime=true&charset=utf8mb4' \\\n"+
-			"    go test ./internal/handler/ -v\n"+
-			"ポート番号は docker-compose.yml の DB_HOST_PORT に合わせる（既定 3306）。\n"+
+		t.Skipf("%s が未設定のため skip。DB はホストに公開していないので、"+
+			"docker compose up -d のうえ app-network 内から実行する:\n"+
+			"  docker run --rm --network app-network -v \"$PWD\":/src -w /src \\\n"+
+			"    -e %s='sakuravel:password@tcp(db:3306)/sakuravel?parseTime=true&charset=utf8mb4' \\\n"+
+			"    golang:1.25 go test -count=1 -race ./internal/...\n"+
 			"DSN には parseTime=true が必須（created_at を time.Time で受けるため）。",
 			testDBEnv, testDBEnv)
 	}

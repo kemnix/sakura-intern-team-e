@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -51,6 +52,10 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
+		if errors.Is(err, bcrypt.ErrPasswordTooLong) {
+			h.respondError(w, http.StatusBadRequest, "password must be at most 72 bytes")
+			return
+		}
 		h.serverError(w, r, err)
 		return
 	}
@@ -61,7 +66,11 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		req.Username, req.DisplayName, req.Email, string(hash),
 	)
 	if err != nil {
-		h.respondError(w, http.StatusConflict, "username or email already exists")
+		if isDuplicateKeyError(err) {
+			h.respondError(w, http.StatusConflict, "username or email already exists")
+			return
+		}
+		h.serverError(w, r, err)
 		return
 	}
 	userID, err := res.LastInsertId()
@@ -150,7 +159,13 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.DB.ExecContext(r.Context(), `DELETE FROM sessions WHERE id = ?`, cookie.Value)
+	if _, err := h.DB.ExecContext(r.Context(),
+		`DELETE FROM sessions WHERE id = ?`, cookie.Value,
+	); err != nil {
+		// 削除に失敗したら Cookie も消さない。セッションが残ったままログアウト済みと信じさせないため。
+		h.serverError(w, r, err)
+		return
+	}
 
 	http.SetCookie(w, h.sessionCookie("", time.Unix(0, 0)))
 	h.respondJSON(w, http.StatusOK, map[string]string{"message": "logged out"})

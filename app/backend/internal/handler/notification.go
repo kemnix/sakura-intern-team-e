@@ -12,6 +12,11 @@ import (
 // relayWriteTimeout は応答後のイベント行の書き込みに掛ける上限 (DSN に readTimeout が無い)。
 const relayWriteTimeout = 5 * time.Second
 
+const (
+	notifyInsertAttempts = 5
+	notifyInsertBackoff  = 5 * time.Millisecond
+)
+
 func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 	myID, _ := h.currentUserID(r)
 	page, perPage, offset := h.pagination(r)
@@ -116,10 +121,13 @@ func (h *Handler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) MarkNotificationsRead(w http.ResponseWriter, r *http.Request) {
 	myID, _ := h.currentUserID(r)
-	h.DB.ExecContext(r.Context(),
+	if _, err := h.DB.ExecContext(r.Context(),
 		`UPDATE notifications SET is_read = TRUE WHERE user_id = ? AND is_read = FALSE`,
 		myID,
-	)
+	); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	h.respondJSON(w, http.StatusOK, map[string]string{"message": "ok"})
 }
 
@@ -180,13 +188,14 @@ func insertNotificationOnce(ctx context.Context, exec notifExecutor, userID int6
 	return affected > 0, nil
 }
 
-// insertNotificationOnceRetry はロック競合の敗者になったときだけ 1 度やり直す。
-// 敗者はトランザクションが丸ごと巻き戻されるだけなので、同じ文をもう一度流せばよい。
+// insertNotificationOnceRetry はロック競合で巻き戻されたときだけやり直す。間を置かずに
+// 流し直すと競合相手も同時に流し直すので、やり直しの間に待ちを挟む。
 func insertNotificationOnceRetry(ctx context.Context, exec notifExecutor, userID int64, ntype string, actorID int64, postID *int64) (bool, error) {
 	inserted, err := insertNotificationOnce(ctx, exec, userID, ntype, actorID, postID)
-	if err != nil && isRetryableLockError(err) {
-		log.Printf("notify: notification insert lost a lock conflict, retrying once (user=%d type=%s actor=%d): %v",
-			userID, ntype, actorID, err)
+	for attempt := 2; attempt <= notifyInsertAttempts && err != nil && isRetryableLockError(err); attempt++ {
+		log.Printf("notify: notification insert lost a lock conflict, retrying (attempt=%d user=%d type=%s actor=%d): %v",
+			attempt, userID, ntype, actorID, err)
+		time.Sleep(time.Duration(attempt-1) * notifyInsertBackoff)
 		inserted, err = insertNotificationOnce(ctx, exec, userID, ntype, actorID, postID)
 	}
 	return inserted, err
