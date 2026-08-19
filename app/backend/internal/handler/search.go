@@ -33,7 +33,7 @@ func (h *Handler) searchPosts(w http.ResponseWriter, r *http.Request, q string, 
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT id FROM posts
 		WHERE content LIKE ?
-		ORDER BY created_at DESC
+		ORDER BY created_at DESC, id DESC
 		LIMIT ? OFFSET ?
 	`, pattern, perPage, offset)
 	if err != nil {
