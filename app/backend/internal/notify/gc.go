@@ -3,7 +3,7 @@ package notify
 import (
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"time"
 )
 
@@ -25,7 +25,7 @@ func (b *Bus) runGC(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if err := b.gcOnce(ctx); err != nil && ctx.Err() == nil {
-				log.Printf("notify: gc: %v", err)
+				slog.Error("notify: gc", "error", err)
 			}
 		}
 	}
@@ -62,7 +62,7 @@ func (b *Bus) gcOnce(ctx context.Context) error {
 		if err := conn.QueryRowContext(releaseCtx,
 			`SELECT RELEASE_LOCK(?)`, gcLockName,
 		).Scan(&released); err != nil {
-			log.Printf("notify: gc: release lock: %v", err)
+			slog.Error("notify: gc: release lock", "error", err)
 		}
 	}()
 

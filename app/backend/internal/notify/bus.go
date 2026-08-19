@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"sync"
@@ -119,7 +119,7 @@ func (b *Bus) deliver(ctx context.Context, ev event) {
 		}
 		if err != nil {
 			if ctx.Err() == nil { // 終了時のキャンセルはポーラ側と同じく黙って畳む
-				log.Printf("notify: hydrate reply (post=%d), giving up: %v", *ev.postID, err)
+				slog.Error("notify: hydrate reply, giving up", "post", *ev.postID, "error", err)
 			}
 			return
 		}

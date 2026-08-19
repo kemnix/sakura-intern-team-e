@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -43,8 +43,7 @@ func (h *Handler) Repost(w http.ResponseWriter, r *http.Request) {
 	if err != nil && isRetryableLockError(err) {
 		// 敗者はトランザクションが丸ごと巻き戻っているのでそのまま流し直せる。ここで諦めると
 		// 再試行すれば通る操作が 500 として見えてしまう。
-		log.Printf("repost: lock conflict, retrying once (user=%d post=%d): %v",
-			myID, req.PostID, err)
+		slog.Error("repost: lock conflict, retrying once", "user", myID, "post", req.PostID, "error", err)
 		notified, err = repostOnce(r.Context(), h.DB, myID, req.PostID, postOwnerID)
 	}
 	if err != nil {

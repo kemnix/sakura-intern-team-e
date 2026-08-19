@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -28,8 +28,7 @@ const cursorRetryInterval = 3 * time.Second
 
 // runPoller は sse_events を繰り返し読み、自プロセスのサブスクライバーに配る。
 func (b *Bus) runPoller(ctx context.Context, cursor int64) {
-	log.Printf("notify: poller started (cursor=%d, interval=%s, batch=%d)",
-		cursor, b.pollInterval, b.batchSize)
+	slog.Info("notify: poller started", "cursor", cursor, "interval", b.pollInterval, "batch", b.batchSize)
 
 	ticker := time.NewTicker(b.pollInterval)
 	defer ticker.Stop()
@@ -44,7 +43,7 @@ func (b *Bus) runPoller(ctx context.Context, cursor int64) {
 				n, next, err := b.pollOnce(ctx, cursor)
 				if err != nil {
 					if ctx.Err() == nil {
-						log.Printf("notify: poll: %v", err)
+						slog.Error("notify: poller", "error", err)
 					}
 					break
 				}
@@ -80,7 +79,7 @@ func (b *Bus) initialCursor(ctx context.Context) (int64, error) {
 			return 0, fmt.Errorf("sse_events を確認できない: %w\n"+
 				"migrations/004_sse_events.sql が未適用の可能性が高い", err)
 		}
-		log.Printf("notify: initial cursor: %v (retrying)", err)
+		slog.Error("notify: initial cursor (retrying)", "error", err)
 
 		select {
 		case <-ctx.Done():
