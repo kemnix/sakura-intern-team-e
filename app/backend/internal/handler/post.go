@@ -163,12 +163,12 @@ func (h *Handler) GetUserPosts(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, id)
 	}
 
-	posts := make([]any, 0, len(ids))
-	for _, id := range ids {
-		p, err := h.fetchPost(r, id, viewerID)
-		if err == nil {
-			posts = append(posts, p)
-		}
+	rows.Close()
+
+	posts, err := h.fetchPostsBulk(r, ids, viewerID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
 	}
 
 	var total int
