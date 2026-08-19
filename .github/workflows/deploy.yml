@@ -1,0 +1,208 @@
+name: Deploy
+
+# ブランチ→環境のマッピングで単一パイプラインを共用する:
+#   dev ブランチへの push  → dev 環境へデプロイ
+#   main への push         → prod 環境へデプロイ（Environments の Required reviewers で承認ゲート）
+#   workflow_dispatch      → 実行対象ブランチで環境が決まる（dev 上なら dev、main 上なら prod）。
+#                            image_tag に過去の sha を入れればロールバック再デプロイになる
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "デプロイするイメージタグ（ロールバック時に過去の sha を指定）"
+        required: false
+
+# terraform を触るワークフローは常に直列化する
+# （オブジェクトストレージ backend のロック機構の代替も兼ねる。dev/prod 間も排他）
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE_TAG: ${{ github.event.inputs.image_tag || github.sha }}
+  # ブランチ→環境（main=prod / それ以外=dev）。job レベルの environment: キーでは
+  # env コンテキストが参照できないため、各 job では同じ式を直接書いている
+  TARGET_ENV: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+
+jobs:
+  # ─────────────────────────────────────────────
+  # ① イメージを build してレジストリへ push
+  # ─────────────────────────────────────────────
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      # レジストリのホスト/ユーザーは非秘密のためコミット済みの env.<環境>.sh から読む
+      # （レジストリは全環境共通なので dev のファイルを使う）
+      - name: Load registry config
+        run: |
+          source infra/apprun-apps/env.dev.sh
+          echo "REGISTRY=$REGISTRY_HOST" >> "$GITHUB_ENV"
+          echo "REGISTRY_USER=$REGISTRY_USER" >> "$GITHUB_ENV"
+
+      - name: Login to Sakura Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build & push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: app/backend
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/sakuravel-backend:${{ env.IMAGE_TAG }}
+            ${{ env.REGISTRY }}/sakuravel-backend:latest
+
+      - name: Build & push proxy (nginx) image
+        uses: docker/build-push-action@v6
+        with:
+          context: app/proxy
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/sakuravel-proxy:${{ env.IMAGE_TAG }}
+            ${{ env.REGISTRY }}/sakuravel-proxy:latest
+
+      # frontend はソースがこのリポジトリに無い（配布イメージ）ため、
+      # レジストリ上の :latest を今回のタグに複製する。
+      # これが無いと deploy-apps.sh の frontend:<sha> が pull できず失敗する。
+      - name: Tag frontend image with IMAGE_TAG
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.REGISTRY }}/sakuravel-frontend:${{ env.IMAGE_TAG }} \
+            ${{ env.REGISTRY }}/sakuravel-frontend:latest
+
+  # ─────────────────────────────────────────────
+  # ② 対象環境の DB migration（踏み台経由。冪等な SQL のみ流す）
+  # ─────────────────────────────────────────────
+  migrate:
+    needs: build-push
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 踏み台/DB の IP は secrets ではなく tfstate(terraform output)から導出する。
+      # wrapper は output の $() キャプチャを壊すため無効化する
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.11"
+          terraform_wrapper: false
+
+      - name: Set up object storage credentials profile
+        run: |
+          mkdir -p ~/.aws
+          cat > ~/.aws/credentials <<EOF
+          [sakura]
+          aws_access_key_id = ${{ secrets.OBJECT_STORAGE_ACCESS_KEY }}
+          aws_secret_access_key = ${{ secrets.OBJECT_STORAGE_SECRET_KEY }}
+          EOF
+          chmod 600 ~/.aws/credentials
+
+      - name: Resolve bastion/DB addresses from tfstate
+        working-directory: infra/terraform-apprun
+        run: |
+          terraform init
+          terraform workspace select ${{ env.TARGET_ENV }}
+          echo "BASTION_HOST=$(terraform output -raw bastion_ip_address)" >> "$GITHUB_ENV"
+          echo "DB_HOST=$(terraform output -raw db_private_ip)" >> "$GITHUB_ENV"
+
+      - name: Run migrations via bastion
+        env:
+          BASTION_SSH_KEY: ${{ secrets.BASTION_SSH_KEY }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$BASTION_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$BASTION_HOST" >> ~/.ssh/known_hosts
+
+          # DB のユーザー/DB名(非秘密)は env.<環境>.sh から読む
+          source infra/apprun-apps/env.${{ env.TARGET_ENV }}.sh
+
+          # CREATE DATABASE IF NOT EXISTS を含め、ローカル/踏み台と同じ手順を通す
+          # （migrations/*.sql は冪等に書く規約。再実行しても安全）
+          bash app/backend/scripts/migrate.sh
+
+  # ─────────────────────────────────────────────
+  # ③ 対象環境へデプロイ → スモークテスト
+  #    terraform apply = インフラ（箱）の差分適用のみ。
+  #    アプリは apprun-dedicated-cli が「新バージョン作成 → 有効化 → 起動待ち」を実施
+  #    （バージョンは Terraform 管理外。active なバージョンは削除不可のため）
+  # ─────────────────────────────────────────────
+  deploy:
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+    defaults:
+      run:
+        working-directory: infra/terraform-apprun
+    env:
+      SAKURA_ACCESS_TOKEN: ${{ secrets.SAKURA_ACCESS_TOKEN }}
+      SAKURA_ACCESS_TOKEN_SECRET: ${{ secrets.SAKURA_ACCESS_TOKEN_SECRET }}
+      TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+      TF_VAR_bastion_password: ${{ secrets.BASTION_PASSWORD }}
+      TF_VAR_registry_password: ${{ secrets.REGISTRY_PASSWORD }}
+      # ダウン検知の通知先(Discord は Webhook URL 末尾に /slack を付けた形式)。未登録なら通知なし
+      TF_VAR_alert_slack_webhook: ${{ secrets.ALERT_WEBHOOK }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.11"
+
+      # backend "s3" の profile = "sakura" をランナー上でも解決できるようにする
+      - name: Set up object storage credentials profile
+        run: |
+          mkdir -p ~/.aws
+          cat > ~/.aws/credentials <<EOF
+          [sakura]
+          aws_access_key_id = ${{ secrets.OBJECT_STORAGE_ACCESS_KEY }}
+          aws_secret_access_key = ${{ secrets.OBJECT_STORAGE_SECRET_KEY }}
+          EOF
+          chmod 600 ~/.aws/credentials
+
+      - run: terraform init
+      - run: terraform workspace select ${{ env.TARGET_ENV }} || terraform workspace new ${{ env.TARGET_ENV }}
+
+      # インフラ（クラスタ/ASG/LB/DB/監視など「箱」）の差分適用
+      - name: terraform apply
+        run: terraform apply -auto-approve -var environment=${{ env.TARGET_ENV }} -var-file=${{ env.TARGET_ENV }}.tfvars
+
+      - name: Install apprun-dedicated-cli
+        uses: fujiwara/apprun-dedicated-cli@v0
+
+      # 非秘密の設定は env.<環境>.sh、インフラ由来の値は --tfstate から
+      # スクリプト自身が読む。CI から渡すのは秘密と ENVIRONMENT / IMAGE_TAG のみ
+      - name: Deploy applications
+        working-directory: infra/apprun-apps
+        env:
+          ENVIRONMENT: ${{ env.TARGET_ENV }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: bash ./deploy-apps.sh
+
+      - name: Smoke test
+        working-directory: .
+        run: |
+          # 単一オリジン: nginx 経由で frontend / api 両方に到達する
+          source infra/apprun-apps/env.${{ env.TARGET_ENV }}.sh
+          curl -sf --retry 10 --retry-delay 6 --retry-all-errors "https://$PUBLIC_FQDN/api/healthz"
+          curl -sf "https://$PUBLIC_FQDN/api/trending" > /dev/null
+          curl -sf "https://$PUBLIC_FQDN/" > /dev/null
+
+      # ロールバック手順（2通り）:
+      #   A) 即時（推奨・数秒）: 旧バージョンを再有効化するだけ（再ビルド不要）
+      #        cd infra/apprun-apps && apprun-dedicated-cli rollback --app <app>.jsonnet
+      #      特定バージョンへ戻す場合は --target <バージョン番号>
+      #   B) Actions 経由: Run workflow で image_tag に過去の成功 sha を指定して再実行
+      #      （新バージョンとして作り直すため数分かかるが、履歴が一直線に残る）

@@ -6,6 +6,6 @@
 --   SELECT user_id, original_post_id, COUNT(*), MIN(id) FROM posts
 --   WHERE original_post_id IS NOT NULL GROUP BY user_id, original_post_id HAVING COUNT(*) > 1;
 -- 【注意】initdb マウント経由の SQL はボリューム初回作成時にしか走らず、既存 DB では黙って
--- 読み飛ばされる。手動適用すること（IF NOT EXISTS が無いので 2 回目は 1061 で失敗する）:
+-- 読み飛ばされる。手動適用すること（IF NOT EXISTS 付きなので再実行しても安全）:
 --   docker compose exec -T db mysql -u sakuravel -ppassword sakuravel < migrations/003_repost_unique.sql
-ALTER TABLE posts ADD UNIQUE KEY uq_posts_user_original (user_id, original_post_id);
+ALTER TABLE posts ADD UNIQUE KEY IF NOT EXISTS uq_posts_user_original (user_id, original_post_id);

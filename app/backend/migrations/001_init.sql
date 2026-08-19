@@ -1,3 +1,5 @@
+-- 各テーブルに CHARSET を明示する(004 と同じ書式)。DBアプライアンスのサーバー既定が
+-- latin1 のため、DB 既定に頼ると日本語 INSERT が Error 1366 で失敗する(dev で実害あり)。
 CREATE TABLE IF NOT EXISTS users (
     id            BIGINT AUTO_INCREMENT PRIMARY KEY,
     username      VARCHAR(50)  NOT NULL UNIQUE,
@@ -6,14 +8,14 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     bio           TEXT,
     created_at    TIMESTAMP    NOT NULL DEFAULT NOW()
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS sessions (
     id         VARCHAR(64)  PRIMARY KEY,
     user_id    BIGINT       NOT NULL,
     created_at TIMESTAMP    NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMP    NOT NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS posts (
     id               BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -23,35 +25,35 @@ CREATE TABLE IF NOT EXISTS posts (
     original_post_id BIGINT,
     parent_post_id   BIGINT      DEFAULT NULL,
     created_at       TIMESTAMP   NOT NULL DEFAULT NOW()
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS follows (
     follower_id BIGINT      NOT NULL,
     followee_id BIGINT      NOT NULL,
     created_at  TIMESTAMP   NOT NULL DEFAULT NOW(),
     PRIMARY KEY (follower_id, followee_id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS likes (
     user_id    BIGINT      NOT NULL,
     post_id    BIGINT      NOT NULL,
     created_at TIMESTAMP   NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, post_id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS reposts (
     user_id    BIGINT      NOT NULL,
     post_id    BIGINT      NOT NULL,
     created_at TIMESTAMP   NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, post_id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS footprints (
     id         BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id    BIGINT      NOT NULL,
     visitor_id BIGINT      NOT NULL,
     created_at TIMESTAMP   NOT NULL DEFAULT NOW()
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS notifications (
     id         BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -61,4 +63,4 @@ CREATE TABLE IF NOT EXISTS notifications (
     post_id    BIGINT,
     is_read    BOOLEAN     NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP   NOT NULL DEFAULT NOW()
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
