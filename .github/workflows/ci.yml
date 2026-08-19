@@ -55,7 +55,10 @@ jobs:
         working-directory: infra/apprun-apps
     steps:
       - uses: actions/checkout@v4
-      - uses: fujiwara/apprun-dedicated-cli@v0
+      # メジャータグ(v0)は存在しない + version 入力必須(deploy.yml と同じ)
+      - uses: fujiwara/apprun-dedicated-cli@v0.1.2
+        with:
+          version: v0.1.2
       # ダミーパラメータで3定義を評価し、Jsonnet の構文・参照エラーを PR 段階で検出する
       # （render はローカル評価のみで、さくらの API には接続しない）
       - name: Render definitions with dummy params

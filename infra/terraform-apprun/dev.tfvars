@@ -7,12 +7,10 @@ zone        = "is1c"
 # コンテナレジストリ（<registry_name>.sakuracr.jp）
 registry_name = "intern-team-e"
 
-# 踏み台への SSH を許可する接続元（作業場所の IP。変わったらここを更新して apply）
-admin_allow_cidrs = [
-  "61.211.224.100/32",
-  "124.37.189.194/32",
-  "133.106.34.117/32",
-]
+# 踏み台 SSH の接続元制限。鍵認証のみ（パスワード認証無効）を前提に全開放。
+# CD（GitHub ホステッドランナー）の IP が巨大かつ毎週変わり列挙不能なため。
+# 絞りたくなったら CIDR を列挙する（その場合 CD の migrate はランナーIPの動的許可が必要）
+admin_allow_cidrs = ["0.0.0.0/0"]
 
 # 踏み台の SSH 公開鍵（keys/README.md の手順で生成してコミット）
 bastion_ssh_public_key_path = "keys/bastion.pub"
