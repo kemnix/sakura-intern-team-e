@@ -67,7 +67,24 @@ jobs:
       - name: terraform apply
         run: terraform apply -auto-approve -var environment=${{ inputs.environment }} -var-file=${{ inputs.environment }}.tfvars
 
-      # DNS 設定等に必要な情報を Summary に出す
+      # DNS 設定等に必要な情報を Summary に出す。
+      # LB ノードは apply 完了後も数分 provisioning が続き、直後に読むと
+      # status=creating / interfaces=null のままになるため、
+      # 全ノードに IP が払い出されるまで refresh でポーリングする(最大10分)
+      - name: Wait for LB nodes to be provisioned
+        run: |
+          for i in $(seq 1 40); do
+            if terraform output -json lb_node_addresses \
+              | jq -e 'length > 0 and all(.[]; .status != "creating" and .interfaces != null)' >/dev/null; then
+              echo "LB ノード作成完了"
+              break
+            fi
+            echo "LB ノード作成中... ($i/40)"
+            sleep 15
+            terraform apply -refresh-only -auto-approve \
+              -var environment=${{ inputs.environment }} -var-file=${{ inputs.environment }}.tfvars >/dev/null
+          done
+
       - name: Write outputs to summary
         run: |
           {
