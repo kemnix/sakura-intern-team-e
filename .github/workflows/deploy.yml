@@ -155,9 +155,11 @@ jobs:
       TF_VAR_alert_slack_webhook: ${{ secrets.ALERT_WEBHOOK }}
     steps:
       - uses: actions/checkout@v4
+      # wrapper はスモークテストの $(terraform output) キャプチャを壊すため無効化
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~> 1.11"
+          terraform_wrapper: false
 
       # backend "s3" の profile = "sakura" をランナー上でも解決できるようにする
       - name: Set up object storage credentials profile
@@ -195,10 +197,10 @@ jobs:
         run: bash ./deploy-apps.sh
 
       - name: Smoke test
-        working-directory: .
         run: |
-          # 単一オリジン: nginx 経由で frontend / api 両方に到達する
-          source infra/apprun-apps/env.${{ env.TARGET_ENV }}.sh
+          # 単一オリジン: nginx 経由で frontend / api 両方に到達する。
+          # FQDN の唯一の情報源は tfvars(public_fqdn) → terraform output から取得
+          PUBLIC_FQDN=$(terraform output -raw public_fqdn)
           curl -sf --retry 10 --retry-delay 6 --retry-all-errors "https://$PUBLIC_FQDN/api/healthz"
           curl -sf "https://$PUBLIC_FQDN/api/trending" > /dev/null
           curl -sf "https://$PUBLIC_FQDN/" > /dev/null

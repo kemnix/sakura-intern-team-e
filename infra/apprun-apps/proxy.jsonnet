@@ -18,7 +18,7 @@ c.base {
       targetPort: 8081,
       loadBalancerPort: 443,
       useLetsEncrypt: p.useLetsEncrypt,
-      host: [p.fqdn],
+      host: [c.fqdn], // tfvars の public_fqdn(tfstate lookup)
       healthCheck: c.healthCheck('/nginx-healthz'),
     },
   ],

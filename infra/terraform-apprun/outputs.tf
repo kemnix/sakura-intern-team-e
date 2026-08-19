@@ -8,6 +8,11 @@ output "db_private_ip" {
   value       = var.db_private_ip
 }
 
+output "public_fqdn" {
+  description = "公開 FQDN。唯一の情報源は tfvars の public_fqdn(jsonnet の tfstate lookup と CI のスモークテストが参照)"
+  value       = var.public_fqdn
+}
+
 output "lb_private_vip" {
   description = "AppRun LB のプライベート VIP(nginx の折り返し先。jsonnet は当面 LB リソース属性を直接 lookup しているが、人間の確認用に output も出す)"
   value       = var.apprun_lb_private_ip

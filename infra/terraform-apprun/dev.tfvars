@@ -35,5 +35,7 @@ monitoring_suite_log_endpoint = "113801924446.logs.monitoring.global.api.sacloud
 # 公開設定（dev はドメインなし運用。取得したら設定する）
 ########################################
 
-public_fqdn        = "skrint-e-dev.kemnix.dev" # 例: dev.sakuravel.example.com
-lets_encrypt_email = "tsubaki@nxla.net"        # 空なら TLS 自動発行なし
+# 公開 FQDN の唯一の情報源(シンプル監視・証明書ホスト・スモークテストすべてここから導出)。
+# 変更時は DNS の A レコード(LB 全ノードの グローバルIP)を先に作ること
+public_fqdn        = "sakuravel-dev.kemnix.dev"
+lets_encrypt_email = "tsubaki@nxla.net" # 空なら TLS 自動発行なし

@@ -5,8 +5,7 @@
 {
   env: 'dev', // dev / prod（クラスタ名 sakuravel-<env> の解決に使う）
   tag: 'latest', // イメージタグ（CD は git sha を渡す）
-  fqdn: 'dev.example.com', // 公開 FQDN
-  // LB VIP / DB IP はここには無い（tfstate lookup。common.libsonnet 参照）
+  // FQDN / LB VIP / DB IP はここには無い（tfstate lookup。common.libsonnet 参照）
   registryHost: 'intern-team-e.sakuracr.jp',
   registryUser: 'cicd-push-user',
   registryPassword: 'CHANGEME', // 秘密。params.libsonnet はコミットしないこと

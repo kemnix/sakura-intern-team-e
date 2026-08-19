@@ -28,6 +28,13 @@ local nodeIPs = [
 
   // DB アプライアンスのプライベート IP
   dbHost:: tfstate('output.db_private_ip', '192.0.2.2'),
+
+  // 公開 FQDN(証明書のホスト名)。唯一の情報源は tfvars の public_fqdn。
+  // 初回は terraform apply で output が state に載ってから deploy すること(CD はその順で実行される)
+  fqdn::
+    local v = tfstate('output.public_fqdn', 'dev.example.com');
+    assert std.length(v) > 0 : 'tfvars の public_fqdn が未設定です(シンプル監視と証明書の両方に必要)';
+    v,
   // Go の MySQL DSN（ホストだけ tfstate 由来、資格情報は params 経由）
   databaseUrl:: p.dbUser + ':' + p.dbPassword + '@tcp(' + $.dbHost + ':3306)/' + p.dbName
                 + '?parseTime=true&charset=utf8mb4',
