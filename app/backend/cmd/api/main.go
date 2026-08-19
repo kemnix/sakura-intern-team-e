@@ -67,6 +67,9 @@ func main() {
 func routes(h *handler.Handler, auth *middleware.Auth) http.Handler {
 	mux := http.NewServeMux()
 
+	// 死活監視（認証不要。proxy 経由では /api/healthz として見える）
+	mux.HandleFunc("GET /healthz", h.Healthz)
+
 	// 認証
 	mux.HandleFunc("POST /register", h.Register)
 	mux.HandleFunc("POST /login", h.Login)
