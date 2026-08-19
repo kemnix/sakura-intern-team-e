@@ -13,7 +13,7 @@ func (h *Handler) GetTrending(w http.ResponseWriter, r *http.Request) {
 		JOIN likes l ON l.post_id = p.id
 		WHERE l.created_at > NOW() - INTERVAL 1 HOUR
 		GROUP BY p.id, p.user_id
-		ORDER BY recent_likes DESC
+		ORDER BY recent_likes DESC, p.id DESC
 		LIMIT 20
 	`)
 	if err != nil {
