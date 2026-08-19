@@ -1,0 +1,83 @@
+name: Bootstrap Infra
+
+# 新規環境の初回構築(または「箱」だけの差分適用)を手動で行う専用ワークフロー。
+#
+# 背景: 通常の Deploy は build → migrate → deploy の順で走るが、migrate は最初に
+# tfstate から踏み台 IP を引くため、空の環境では apply(deploy ジョブ内)まで
+# 到達できず失敗する。そこで初回はこのワークフローで「箱」(クラスタ/ASG/LB/
+# SEG/DB/踏み台)だけ先に作り、その後 dev/main への push で通常運用に入る。
+#
+# 既存環境に対して実行しても無害(差分が無ければ no-op)。インフラだけ変更したい
+# ときの「apply 単発実行」としても使える。
+#
+# 実行後の手作業(忘れずに):
+#   1. Summary に出る LB のグローバル IP へ DNS(public_fqdn の A レコード)を向ける
+#   2. コンパネ: AppRun専有型「ログ・メトリクス設定」でコンテナログを「利用する」に
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "構築する環境"
+        type: choice
+        options: [dev, prod]
+        required: true
+
+# Deploy と同じグループで terraform の実行を排他する
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }} # prod は Required reviewers の承認ゲートが効く
+    defaults:
+      run:
+        working-directory: infra/terraform-apprun
+    env:
+      SAKURA_ACCESS_TOKEN: ${{ secrets.SAKURA_ACCESS_TOKEN }}
+      SAKURA_ACCESS_TOKEN_SECRET: ${{ secrets.SAKURA_ACCESS_TOKEN_SECRET }}
+      TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+      TF_VAR_bastion_password: ${{ secrets.BASTION_PASSWORD }}
+      TF_VAR_registry_password: ${{ secrets.REGISTRY_PASSWORD }}
+      # ダウン検知の通知先(Discord は Webhook URL 末尾に /slack を付けた形式)。未登録なら通知なし
+      TF_VAR_alert_slack_webhook: ${{ secrets.ALERT_WEBHOOK }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # output を $() で拾うため wrapper は無効化
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.11"
+          terraform_wrapper: false
+
+      - name: Set up object storage credentials profile
+        run: |
+          mkdir -p ~/.aws
+          cat > ~/.aws/credentials <<EOF
+          [sakura]
+          aws_access_key_id = ${{ secrets.OBJECT_STORAGE_ACCESS_KEY }}
+          aws_secret_access_key = ${{ secrets.OBJECT_STORAGE_SECRET_KEY }}
+          EOF
+          chmod 600 ~/.aws/credentials
+
+      - run: terraform init
+      - run: terraform workspace select ${{ inputs.environment }} || terraform workspace new ${{ inputs.environment }}
+
+      - name: terraform apply
+        run: terraform apply -auto-approve -var environment=${{ inputs.environment }} -var-file=${{ inputs.environment }}.tfvars
+
+      # DNS 設定等に必要な情報を Summary に出す
+      - name: Write outputs to summary
+        run: |
+          {
+            echo "## Bootstrap 完了: ${{ inputs.environment }}"
+            echo '```'
+            echo "bastion_ip_address = $(terraform output -raw bastion_ip_address)"
+            echo "db_private_ip      = $(terraform output -raw db_private_ip)"
+            echo "lb_private_vip     = $(terraform output -raw lb_private_vip)"
+            echo "lb_node_addresses:"
+            terraform output -json lb_node_addresses
+            echo '```'
+            echo "**次の手作業**: LB のグローバル IP へ public_fqdn の A レコードを向ける / コンパネでログ・メトリクス設定"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,91 @@
+name: CI
+
+# on:
+#   pull_request:
+#     branches: [main]
+
+jobs:
+  backend:
+    name: Backend (go vet / build / test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: app/backend/go.mod
+          cache-dependency-path: app/backend/go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        run: go test ./... -count=1
+
+  docker-build:
+    name: Docker build (push なし)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: app/backend
+          platforms: linux/amd64
+          push: false
+      - name: Build proxy image
+        uses: docker/build-push-action@v6
+        with:
+          context: app/proxy
+          platforms: linux/amd64
+          push: false
+
+  apprun-definitions:
+    name: AppRun app definitions (jsonnet render)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/apprun-apps
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fujiwara/apprun-dedicated-cli@v0
+      # ダミーパラメータで3定義を評価し、Jsonnet の構文・参照エラーを PR 段階で検出する
+      # （render はローカル評価のみで、さくらの API には接続しない）
+      - name: Render definitions with dummy params
+        run: |
+          cp params.example.libsonnet params.libsonnet
+          for app in api frontend proxy; do
+            echo "== render: $app"
+            apprun-dedicated-cli render --app "$app.jsonnet" > /dev/null
+          done
+          rm params.libsonnet
+
+  terraform:
+    name: Terraform (fmt / validate)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform-apprun
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.11"
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      # PR では backend に接続せず構文検証のみ（plan は deploy.yml 側で実施）
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
