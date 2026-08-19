@@ -8,13 +8,17 @@ func (h *Handler) GetTrending(w http.ResponseWriter, r *http.Request) {
 	myID, _ := h.currentUserID(r)
 
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT p.id, p.user_id, COUNT(l.post_id) AS recent_likes
-		FROM posts p
-		JOIN likes l ON l.post_id = p.id
-		WHERE l.created_at > NOW() - INTERVAL 1 HOUR
-		GROUP BY p.id, p.user_id
-		ORDER BY recent_likes DESC, p.id DESC
-		LIMIT 20
+		SELECT p.id, t.recent_likes
+		FROM (
+			SELECT post_id, COUNT(*) AS recent_likes
+			FROM likes
+			WHERE created_at > NOW() - INTERVAL 1 HOUR
+			GROUP BY post_id
+			ORDER BY recent_likes DESC, post_id DESC
+			LIMIT 20
+		) t
+		JOIN posts p ON p.id = t.post_id
+		ORDER BY t.recent_likes DESC, p.id DESC
 	`)
 	if err != nil {
 		h.serverError(w, r, err)
@@ -29,8 +33,7 @@ func (h *Handler) GetTrending(w http.ResponseWriter, r *http.Request) {
 	var rawTrends []trendRow
 	for rows.Next() {
 		var t trendRow
-		var userID int64
-		rows.Scan(&t.postID, &userID, &t.recentLikes)
+		rows.Scan(&t.postID, &t.recentLikes)
 		rawTrends = append(rawTrends, t)
 	}
 
