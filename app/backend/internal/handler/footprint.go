@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -11,10 +11,9 @@ func recordFootprint(h *Handler, r *http.Request, userID, visitorID int64) {
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`INSERT INTO footprints (user_id, visitor_id) VALUES (?, ?)`,
-		userID, visitorID,
+		`INSERT INTO footprints (user_id, visitor_id) VALUES (?, ?)`, userID, visitorID,
 	); err != nil {
-		log.Printf("footprint: record (user=%d visitor=%d): %v", userID, visitorID, err)
+		slog.Error("footprint: record failed", "error", err, "user", userID, "visitor", visitorID)
 	}
 }
 

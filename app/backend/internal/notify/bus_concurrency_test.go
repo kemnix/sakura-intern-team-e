@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"os"
 	"reflect"
 	"strconv"
@@ -112,8 +112,9 @@ func (b *syncBuffer) String() string {
 func captureLog(t *testing.T) *syncBuffer {
 	t.Helper()
 	buf := &syncBuffer{}
-	log.SetOutput(buf)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
 	return buf
 }
 

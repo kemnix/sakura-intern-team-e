@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"net/http"
 	"sakuravel/internal/notify"
 	"time"
@@ -193,8 +193,7 @@ func insertNotificationOnce(ctx context.Context, exec notifExecutor, userID int6
 func insertNotificationOnceRetry(ctx context.Context, exec notifExecutor, userID int64, ntype string, actorID int64, postID *int64) (bool, error) {
 	inserted, err := insertNotificationOnce(ctx, exec, userID, ntype, actorID, postID)
 	for attempt := 2; attempt <= notifyInsertAttempts && err != nil && isRetryableLockError(err); attempt++ {
-		log.Printf("notify: notification insert lost a lock conflict, retrying (attempt=%d user=%d type=%s actor=%d): %v",
-			attempt, userID, ntype, actorID, err)
+		slog.Error("notify: notification insert lost a lock conflict, retrying", "attempt", attempt, "userID", userID, "error", err)
 		time.Sleep(time.Duration(attempt-1) * notifyInsertBackoff)
 		inserted, err = insertNotificationOnce(ctx, exec, userID, ntype, actorID, postID)
 	}
@@ -210,8 +209,7 @@ func createNotificationOnce(h *Handler, r *http.Request, userID int64, ntype str
 	}
 	inserted, err := insertNotificationOnceRetry(r.Context(), h.DB, userID, ntype, actorID, postID)
 	if err != nil {
-		log.Printf("notify: create notification (user=%d type=%s actor=%d): %v",
-			userID, ntype, actorID, err)
+		slog.Error("notify: create notification", "user", userID, "type", ntype, "actor", actorID, "error", err)
 		return
 	}
 	if !inserted {
@@ -230,6 +228,6 @@ func deliverNotification(ctx context.Context, h *Handler, userID int64, ntype st
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), relayWriteTimeout)
 	defer cancel()
 	if err := notify.Publish(writeCtx, h.DB, userID, ntype, postID); err != nil {
-		log.Printf("notify: publish event (user=%d type=%s): %v", userID, ntype, err)
+		slog.Error("notify: publish event", "user", userID, "type", ntype, "error", err)
 	}
 }

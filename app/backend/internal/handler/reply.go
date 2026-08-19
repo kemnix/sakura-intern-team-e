@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"sakuravel/internal/notify"
 	"sakuravel/internal/realtime"
@@ -80,7 +80,7 @@ func (h *Handler) CreateReply(w http.ResponseWriter, r *http.Request) {
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), relayWriteTimeout)
 	defer cancel()
 	if err := notify.PublishReply(writeCtx, h.DB, rootID, postID); err != nil {
-		log.Printf("notify: publish reply event (root=%d post=%d): %v", rootID, postID, err)
+		slog.Error("notify: publish reply event", "root", rootID, "post", postID, "error", err)
 	}
 
 	h.respondJSON(w, http.StatusCreated, map[string]any{"post": post})

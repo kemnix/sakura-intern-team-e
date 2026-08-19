@@ -2,7 +2,7 @@ package db
 
 import (
 	"database/sql"
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -16,12 +16,15 @@ import (
 func New() *sql.DB {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		log.Fatalf("DATABASE_URL is not set")
+		slog.Error("DATABASE_URL is not set")
+		os.Exit(1)
+		
 	}
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		log.Fatalf("db open: %v", err)
+		slog.Error("db open", "error", err)
+		os.Exit(1)
 	}
 
 	// 既定値はあくまで出発点であり、最適値は DB 側の max_connections や
@@ -36,14 +39,15 @@ func New() *sql.DB {
 		if err = db.Ping(); err == nil {
 			break
 		}
-		log.Printf("waiting for db... (%d/10)", i+1)
+		slog.Info("waiting for db...", "attempt", i+1, "max attempt", 10)
 		time.Sleep(2 * time.Second)
 	}
 	if err != nil {
-		log.Fatalf("db ping: %v", err)
+		slog.Error("db ping", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("database connected")
+	slog.Info("database connected")
 	return db
 }
 

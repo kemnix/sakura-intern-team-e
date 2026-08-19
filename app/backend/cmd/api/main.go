@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -38,7 +37,8 @@ func main() {
 	defer stop()
 	bus := notify.New(db, h.Notifications, h.Threads, h.ReplyEvent)
 	if err := bus.Start(ctx); err != nil {
-		log.Fatal(err)
+		slog.Error("failed to start SSE bus", "error", err)
+		os.Exit(1)
 	}
 
 	mux := http.NewServeMux()
@@ -55,12 +55,15 @@ func main() {
 	// ListenAndServe には戻る経路が無いので待つのはシグナル側。main が戻れば
 	// プロセスは終了する（HTTP の graceful shutdown はここでは扱わない）。
 	go func() {
-		log.Printf("starting server on :%s", port)
-		log.Fatal(http.ListenAndServe(":"+port, mux))
+		slog.Info("starting server", "port", port)
+		if err := http.ListenAndServe(":"+port, mux); err != nil {
+			slog.Error("server stopped", "error", err)
+			os.Exit(1)
+		}
 	}()
 
 	<-ctx.Done()
-	log.Println("shutting down: stopping SSE bus")
+	slog.Info("shutting down: stopping SSE bus")
 	bus.Wait()
 }
 

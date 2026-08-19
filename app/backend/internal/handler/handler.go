@@ -3,7 +3,7 @@ package handler
 import (
 	"database/sql"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"sakuravel/internal/middleware"
 	"sakuravel/internal/model"
@@ -35,7 +35,7 @@ func (h *Handler) respondError(w http.ResponseWriter, status int, msg string) {
 // serverError は 500 応答の定型。応答本文は固定なので、原因はここでログにだけ残す。
 // 呼び出し側は続けて return すること。
 func (h *Handler) serverError(w http.ResponseWriter, r *http.Request, err error) {
-	log.Printf("server error: %s %s: %v", r.Method, r.URL.Path, err)
+	slog.Error("server error", "method", r.Method, "url", r.URL.Path, "error", err)
 	h.respondError(w, http.StatusInternalServerError, "server error")
 }
 
@@ -368,8 +368,8 @@ func (h *Handler) threadRootID(r *http.Request, postID int64) int64 {
 		)
 		SELECT COALESCE(parent_post_id, id) FROM ancestors ORDER BY depth DESC LIMIT 1
 	`, postID).Scan(&rootID)
-	if err != nil {
-		log.Printf("thread root lookup failed (post=%d): %v; falling back to %d", postID, err, postID)
+	if err != nil {	
+		slog.Error("thread root lookup failed", "post", postID, "error", err, "falling back to", postID)
 		return postID
 	}
 	return rootID
