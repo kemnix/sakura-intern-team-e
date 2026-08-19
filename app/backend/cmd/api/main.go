@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +17,9 @@ import (
 )
 
 func main() {
+	//構造化ログ（JSON）を stdout へ、モニタリングスイートで検索、絞り込みしやすくするため
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	db := appdb.New()
 	defer db.Close()
 
@@ -40,7 +44,9 @@ func main() {
 	mux := http.NewServeMux()
 
 	// CORS ミドルウェア
-	mux.Handle("/", corsMiddleware(routes(h, auth)))
+	// すべてのパスがこの行を通るのでここに logging を挟むだけで全エンドポイントがログとして出力される
+	// CORS より外側に置くのは CORS や認証で弾かれたリクエストも記録する必要があるため。
+	mux.Handle("/", middleware.Logging(corsMiddleware(routes(h, auth))))
 
 	port := os.Getenv("PORT")
 	if port == "" {
