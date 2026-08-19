@@ -1,0 +1,258 @@
+<mxfile host="65bd71144e">
+    <diagram id="apprun-arch-latest" name="Page-1">
+        <mxGraphModel dx="727" dy="1924" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="1200" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="2" value="The Internet" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="340" y="-60" width="560" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="シンプル監視&#xa;/api/healthz を60秒毎&#xa;3回失敗で Slack 通知&#xa;※public_fqdn 設定時のみ作成（現状 dev のみ）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="-60" width="210" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="100" value=" prod（workspace: prod）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;opacity=50;verticalAlign=top;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="110" width="600" height="620" as="geometry"/>
+                </mxCell>
+                <mxCell id="101" value="AppRun専有型（prod）　TLS: Let&#39;s Encrypt（※public_fqdn / メール未設定のため現状なし）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;verticalAlign=top;fontStyle=1;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="140" width="560" height="350" as="geometry"/>
+                </mxCell>
+                <mxCell id="102" value="ロードバランサ 1vCPU/2GB&#xa;冗長構成（LBノード ×2）&#xa;待受 443（公開）/ 80（折り返し）&#xa;プライベートVIP 192.168.1.124" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="168" width="240" height="74" as="geometry"/>
+                </mxCell>
+                <mxCell id="103" value="proxy (nginx) コンテナ ×2〜5&lt;br&gt;(250m / 256MiB)" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="215" y="285" width="210" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="104" value="オートスケーリンググループ　ワーカーノード 4vCPU/4GB ×2〜5&#xa;（コンテナのCPU 70%超で増・30%未満で減）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;verticalAlign=top;dashed=1;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="250" width="520" height="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="105" value="frontend コンテナ ×2〜5&#xa;(500m / 512MiB)&#xa;host: front.internal" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="105" y="395" width="220" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="106" value="api コンテナ ×2〜5&#xa;(1000m / 1024MiB)&#xa;host: api.internal" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="360" y="395" width="220" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="107" value="vSwitch 192.168.1.0/24（prod）　ワーカー .100-.119 / LB .120-.123" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="505" width="560" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="108" value="DBアプライアンス&#xa;MariaDB 10.11 / 10GB&#xa;192.168.1.30:3306&#xa;日次バックアップ 03:00&#xa;モニタリングスイート連携&#xa;SSE通知テーブル（Hub外部化）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="580" width="190" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="110" value="SEG 192.168.1.3&#xa;（Terraform管理）&#xa;DNS提供・閉域の窓口:&#xa;レジストリ／コントロールプレーン／&#xa;オブジェクトストレージ／&#xa;モニタリングスイート(ログ)" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="275" y="580" width="165" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="109" value="踏み台サーバー（prod 専用）&#xa;1core/1GB&#xa;SSH鍵認証のみ・PFでIP制限&#xa;prod の vSwitch にのみ接続&#xa;（CD migration の中継点）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="455" y="580" width="165" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="200" value=" dev（workspace: dev）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#f8cecc;strokeColor=#b85450;opacity=50;verticalAlign=top;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="680" y="110" width="600" height="620" as="geometry"/>
+                </mxCell>
+                <mxCell id="201" value="AppRun専有型（dev）　TLS: Let&#39;s Encrypt 自動発行" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;verticalAlign=top;fontStyle=1;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="140" width="560" height="350" as="geometry"/>
+                </mxCell>
+                <mxCell id="202" value="ロードバランサ 1vCPU/2GB&#xa;冗長構成（LBノード ×2）&#xa;待受 443（公開）/ 80（折り返し）&#xa;プライベートVIP 192.168.1.124" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="840" y="168" width="240" height="74" as="geometry"/>
+                </mxCell>
+                <mxCell id="203" value="proxy (nginx) コンテナ ×2〜5&#xa;(250m / 256MiB)&#xa;/api を LB:80 へ折り返し" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="855" y="265" width="210" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="204" value="オートスケーリンググループ　ワーカーノード 4vCPU/4GB ×2〜5&#xa;（コンテナのCPU 70%超で増・30%未満で減）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;verticalAlign=top;dashed=1;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="720" y="345" width="520" height="135" as="geometry"/>
+                </mxCell>
+                <mxCell id="205" value="frontend コンテナ ×2〜5&#xa;(500m / 512MiB)&#xa;host: front.internal" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="745" y="395" width="220" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="206" value="api コンテナ ×2〜5&#xa;(1000m / 1024MiB)&#xa;host: api.internal" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="1000" y="395" width="220" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="207" value="vSwitch 192.168.1.0/24（dev）　ワーカー .100-.119 / LB .120-.123" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="505" width="560" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="208" value="DBアプライアンス&#xa;MariaDB 10.11 / 10GB&#xa;192.168.1.30:3306&#xa;日次バックアップ 03:00&#xa;モニタリングスイート連携&#xa;SSE通知テーブル（Hub外部化）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="710" y="580" width="190" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="210" value="SEG 192.168.1.3&#xa;（Terraform管理）&#xa;DNS提供・閉域の窓口:&#xa;レジストリ／コントロールプレーン／&#xa;オブジェクトストレージ／&#xa;モニタリングスイート(ログ)&#xa;※ログ転送は dev のみ設定済" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="915" y="580" width="165" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="209" value="踏み台サーバー（dev 専用）&#xa;1core/1GB&#xa;SSH鍵認証のみ・PFでIP制限&#xa;dev の vSwitch にのみ接続&#xa;（CD migration の中継点）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="1095" y="580" width="165" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="300" value="CI/CD・管理系" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=1" parent="1" vertex="1">
+                    <mxGeometry x="60" y="765" width="240" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="301" value="開発者" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="850" width="100" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="302" value="GitHub&#xa;リポジトリ" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="230" y="850" width="130" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="303" value="GitHub Actions (CI)&#xa;go vet / build / test&#xa;docker build（backend / proxy）&#xa;terraform fmt / validate" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#f5f5f5;strokeColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="430" y="775" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="304" value="GitHub Actions (CD)" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#f5f5f5;strokeColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="430" y="905" width="190" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="305" value="コンテナレジストリ&#xa;intern-team-e.sakuracr.jp&#xa;(backend / proxy&#xa;※frontend は CI/CD 未対応)" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="775" width="210" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="306" value="オブジェクトストレージ&#xa;tfstate（bucket: cicd / key: apprun/…）&#xa;prod / dev は workspace で分離" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="905" width="210" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="307" value="デプロイ／ロールバック&#xa;・箱（クラスタ/ASG/LB/DB/SEG…）= terraform apply&#xa;・アプリ/バージョン = apprun-dedicated-cli deploy&#xa;　（定義: apprun-apps/*.jsonnet、Terraform 管理外）&#xa;・新バージョン有効化で AppRun が順次入替&#xa;・ロールバック = 過去 :sha 指定の再実行 / cli rollback&#xa;・prod は Environments の承認付き" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;align=left;spacingLeft=8;" parent="1" vertex="1">
+                    <mxGeometry x="960" y="775" width="300" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="309" value="モニタリングスイート&#xa;シンプル監視・DB のメトリクス収集&#xa;コンテナログは SEG 経由で転送（dev のみ設定済）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;align=left;spacingLeft=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="960" y="935" width="300" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="308" value="障害対応: シンプル監視 → Slack 通知。&#xa;コンテナ／ワーカーノードの再起動・再配置は AppRun が自動。&#xa;api 複数コンテナ化の前提 = SSE通知の MariaDB テーブル方式（リリース済であること）" style="rounded=1;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=11;align=left;spacingLeft=8;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="1030" width="460" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="50" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;endArrow=none;endFill=0;" parent="1" source="3" target="2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="150" value="HTTPS（public_fqdn ※未設定）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;entryX=0.5;entryY=0;" parent="1" source="2" target="102" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="151" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="102" target="103" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="152" value="/ → front.internal" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" parent="1" source="103" target="105" edge="1">
+                    <mxGeometry x="0.4148" y="-10" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="268" y="370"/>
+                            <mxPoint x="215" y="370"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="153" value="/api → api.internal" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" parent="1" source="103" target="106" edge="1">
+                    <mxGeometry x="0.2541" y="10" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="373" y="370"/>
+                            <mxPoint x="470" y="370"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="154" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;endArrow=none;endFill=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" parent="1" source="106" target="107" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="155" value="3306" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;endArrow=none;endFill=0;exitX=0.2;exitY=1;entryX=0.5;entryY=0;" parent="1" source="107" target="108" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="158" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;endArrow=none;endFill=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" parent="1" source="107" target="110" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="156" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;endArrow=none;endFill=0;exitX=0.824;exitY=0.985;entryX=0.401;entryY=0.009;exitDx=0;exitDy=0;exitPerimeter=0;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="107" target="109" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="157" value="SSH（鍵＋IP制限）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;entryX=0.5;entryY=0;" parent="1" source="2" target="109" edge="1">
+                    <mxGeometry x="0.0443" y="-15" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="610" y="305"/>
+                            <mxPoint x="538" y="305"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="250" value="HTTPS skrint-e-dev.kemnix.dev" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;entryX=0.5;entryY=0;" parent="1" source="2" target="202" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="251" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="202" target="203" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="252" value="/ → front.internal" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" parent="1" source="203" target="205" edge="1">
+                    <mxGeometry x="0.0205" y="-10" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="908" y="340"/>
+                            <mxPoint x="855" y="340"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="253" value="/api → api.internal" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" parent="1" source="203" target="206" edge="1">
+                    <mxGeometry x="0.1047" y="10" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1012" y="340"/>
+                            <mxPoint x="1110" y="340"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="254" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;endArrow=none;endFill=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" parent="1" source="206" target="207" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="255" value="3306" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;endArrow=none;endFill=0;exitX=0.2;exitY=1;entryX=0.5;entryY=0;" parent="1" source="207" target="208" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="258" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;endArrow=none;endFill=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" parent="1" source="207" target="210" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="256" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;endArrow=none;endFill=0;exitX=0.834;exitY=1.004;entryX=0.435;entryY=-0.002;exitDx=0;exitDy=0;exitPerimeter=0;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="207" target="209" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="257" value="SSH（鍵＋IP制限）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;entryX=0.5;entryY=0;" parent="1" source="2" target="209" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="320" value="git push / PR" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="301" target="302" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="321" value="Pull Request" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.25;entryX=0;entryY=0.5;" parent="1" source="302" target="303" edge="1">
+                    <mxGeometry x="-0.191" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="322" value="main マージ" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.75;entryX=0;entryY=0.5;" parent="1" source="302" target="304" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="323" value="① build &amp;amp; push (:sha)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.25;entryX=0;entryY=0.5;" parent="1" source="304" target="305" edge="1">
+                    <mxGeometry x="-0.1351" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="660" y="920"/>
+                            <mxPoint x="660" y="815"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="324" value="state 読み書き" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.75;entryX=0;entryY=0.5;" parent="1" source="304" target="306" edge="1">
+                    <mxGeometry x="-0.1111" y="-10" relative="1" as="geometry">
+                        <mxPoint x="-10" y="10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="325" value="② migration（各環境の踏み台SSH経由）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;dashed=1;exitX=0.25;exitY=0;entryX=0.5;entryY=1;" parent="1" source="304" target="109" edge="1">
+                    <mxGeometry x="0.0185" y="23" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="477" y="780"/>
+                            <mxPoint x="537" y="780"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="326" value="③ dev: terraform apply ＋ cli deploy → スモークテスト" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.75;exitY=0;" parent="1" source="304" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="950" y="731" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="572" y="860"/>
+                            <mxPoint x="950" y="860"/>
+                            <mxPoint x="950" y="731"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="327" value="④ prod: terraform apply ＋ cli deploy（承認後）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.1;exitY=0;entryX=0.4;entryY=1;" parent="1" source="304" target="100" edge="1">
+                    <mxGeometry x="0.593" y="-10" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="449" y="830"/>
+                            <mxPoint x="280" y="830"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="328" value="イメージ pull（SEG経由）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;dashed=1;exitX=0.4;exitY=0;entryX=0.5;entryY=1;" parent="1" source="305" target="110" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="329" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontFamily=Helvetica;fontSize=11;labelBackgroundColor=#ffffff;dashed=1;exitX=0.9;exitY=0;entryX=0.5;entryY=1;" parent="1" source="305" target="210" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
