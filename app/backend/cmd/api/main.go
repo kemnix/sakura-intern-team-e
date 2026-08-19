@@ -43,10 +43,9 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// CORS ミドルウェア
-	// すべてのパスがこの行を通るのでここに logging を挟むだけで全エンドポイントがログとして出力される
-	// CORS より外側に置くのは CORS や認証で弾かれたリクエストも記録する必要があるため。
-	mux.Handle("/", middleware.Logging(corsMiddleware(routes(h, auth))))
+	// すべてのパスがこの行を通るのでここに logging を挟むだけで全エンドポイントがログとして出力される。
+	// CORS ミドルウェアは nginx による単一オリジン化(フロントと API が同一オリジン)に伴い撤去した。
+	mux.Handle("/", middleware.Logging(routes(h, auth)))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -126,22 +125,4 @@ func routes(h *handler.Handler, auth *middleware.Auth) http.Handler {
 	mux.Handle("GET /trending", auth.Optional(http.HandlerFunc(h.GetTrending)))
 
 	return mux
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
-	if allowedOrigin == "" {
-		allowedOrigin = "http://localhost:3000"
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
