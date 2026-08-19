@@ -5,9 +5,8 @@ environment = "prod"
 
 registry_name = "intern-team-e"
 
-admin_allow_cidrs = [
-  "61.211.224.100/32",
-]
+# 鍵認証のみ前提で全開放（理由は dev.tfvars 参照）
+admin_allow_cidrs = ["0.0.0.0/0"]
 
 bastion_ssh_public_key_path = "keys/bastion.pub"
 

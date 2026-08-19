@@ -42,7 +42,7 @@ variable "bastion_private_ip_cidr" {
 }
 
 variable "admin_allow_cidrs" {
-  description = "踏み台への SSH を許可する接続元 CIDR のリスト（オフィス/自宅 IP など）"
+  description = "踏み台への SSH を許可する接続元 CIDR のリスト。鍵認証のみ運用のため現在は全開放(0.0.0.0/0)。CD のランナー IP が列挙不能なことが理由(tfvars のコメント参照)"
   type        = list(string)
   # デフォルトは全拒否に近い値。必ず実際の IP に上書きすること。
   default = []
