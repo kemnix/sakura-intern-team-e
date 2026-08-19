@@ -21,7 +21,7 @@ func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 	switch feed {
 	case "latest":
 		rows, err = h.DB.QueryContext(r.Context(), `
-			SELECT id, user_id, content, is_repost, original_post_id, created_at
+			SELECT id
 			FROM posts
 			WHERE parent_post_id IS NULL
 			ORDER BY created_at DESC, id DESC
@@ -29,7 +29,7 @@ func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 		`, perPage, offset)
 	case "recommended":
 		rows, err = h.DB.QueryContext(r.Context(), `
-			SELECT p.id, p.user_id, p.content, p.is_repost, p.original_post_id, p.created_at
+			SELECT p.id
 			FROM posts p
 			LEFT JOIN (
 				SELECT post_id, COUNT(*) AS recent_likes
@@ -43,7 +43,7 @@ func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 		`, perPage, offset)
 	default: // "following"
 		rows, err = h.DB.QueryContext(r.Context(), `
-			SELECT id, user_id, content, is_repost, original_post_id, created_at
+			SELECT id
 			FROM posts
 			WHERE parent_post_id IS NULL
 			  AND user_id IN (
@@ -62,8 +62,7 @@ func (h *Handler) GetTimeline(w http.ResponseWriter, r *http.Request) {
 	var postIDs []int64
 	for rows.Next() {
 		var id int64
-		var dummy any // user_id, content, is_repost, original_post_id, created_at
-		rows.Scan(&id, &dummy, &dummy, &dummy, &dummy, &dummy)
+		rows.Scan(&id)
 		postIDs = append(postIDs, id)
 	}
 	rows.Close()
