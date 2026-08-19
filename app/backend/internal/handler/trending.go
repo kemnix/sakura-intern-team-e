@@ -26,26 +26,28 @@ func (h *Handler) GetTrending(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	type trendRow struct {
-		postID      int64
-		recentLikes int
-	}
-	var rawTrends []trendRow
+	var postIDs []int64
+	recentLikes := map[int64]int{}
 	for rows.Next() {
-		var t trendRow
-		rows.Scan(&t.postID, &t.recentLikes)
-		rawTrends = append(rawTrends, t)
+		var postID int64
+		var likes int
+		rows.Scan(&postID, &likes)
+		postIDs = append(postIDs, postID)
+		recentLikes[postID] = likes
+	}
+	rows.Close()
+
+	fetched, err := h.fetchPostsBulk(r, postIDs, myID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
 	}
 
-	posts := make([]any, 0, len(rawTrends))
-	for _, rt := range rawTrends {
-		p, err := h.fetchPost(r, rt.postID, myID)
-		if err != nil {
-			continue
-		}
+	posts := make([]any, 0, len(fetched))
+	for _, p := range fetched {
 		posts = append(posts, map[string]any{
 			"post":         p,
-			"recent_likes": rt.recentLikes,
+			"recent_likes": recentLikes[p.ID],
 		})
 	}
 
