@@ -177,8 +177,13 @@ jobs:
       - name: terraform apply
         run: terraform apply -auto-approve -var environment=${{ env.TARGET_ENV }} -var-file=${{ env.TARGET_ENV }}.tfvars
 
+      # このアクションは v0 のようなメジャータグを切らない運用 + version 入力が必須
       - name: Install apprun-dedicated-cli
-        uses: fujiwara/apprun-dedicated-cli@v0
+        uses: fujiwara/apprun-dedicated-cli@v0.1.2
+        with:
+          version: v0.1.2
+        with:
+          version: v0.1.2
 
       # 非秘密の設定は env.<環境>.sh、インフラ由来の値は --tfstate から
       # スクリプト自身が読む。CI から渡すのは秘密と ENVIRONMENT / IMAGE_TAG のみ
