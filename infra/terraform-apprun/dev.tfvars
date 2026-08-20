@@ -5,7 +5,7 @@ environment = "dev"
 zone        = "is1c"
 
 # コンテナレジストリ（<registry_name>.sakuracr.jp）
-registry_name = "intern-team-e"
+registry_name = "intern-team-e-y"
 
 # 踏み台 SSH の接続元制限。鍵認証のみ（パスワード認証無効）を前提に全開放。
 # CD（GitHub ホステッドランナー）の IP が巨大かつ毎週変わり列挙不能なため。
@@ -38,5 +38,5 @@ monitoring_suite_log_endpoint = "113801924446.logs.monitoring.global.api.sacloud
 
 # 公開 FQDN の唯一の情報源(シンプル監視・証明書ホスト・スモークテストすべてここから導出)。
 # 変更時は DNS の A レコード(LB 全ノードの グローバルIP)を先に作ること
-public_fqdn        = "sakuravel-dev.kemnix.dev"
+public_fqdn        = "sakuravel-dev-y.kemnix.dev"
 lets_encrypt_email = "tsubaki@nxla.net" # 空なら TLS 自動発行なし
