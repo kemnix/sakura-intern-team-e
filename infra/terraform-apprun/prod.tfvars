@@ -28,5 +28,5 @@ apprun_lb_service_class_name     = "AppRun専有型 ロードバランサ 1vCPU 
 # 公開設定（ドメイン取得後に設定。シンプル監視もこの FQDN を監視する）
 ########################################
 
-public_fqdn        = "sakuravel-prod.kemnix.dev" # 例: dev.sakuravel.example.com
+public_fqdn        = "sakuravel-proddayo.kemnix.dev" # 例: dev.sakuravel.example.com
 lets_encrypt_email = "tsubaki@nxla.net"          # 空なら TLS 自動発行なし
