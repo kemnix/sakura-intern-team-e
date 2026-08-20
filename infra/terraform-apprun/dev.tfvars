@@ -5,7 +5,7 @@ environment = "dev"
 zone        = "is1c"
 
 # コンテナレジストリ（<registry_name>.sakuracr.jp）
-registry_name = "intern-team-e"
+registry_name = "intern-team-e-y"
 
 # 踏み台 SSH の接続元制限。鍵認証のみ（パスワード認証無効）を前提に全開放。
 # CD（GitHub ホステッドランナー）の IP が巨大かつ毎週変わり列挙不能なため。
