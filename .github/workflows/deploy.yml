@@ -110,7 +110,7 @@ jobs:
       - name: Resolve bastion/DB addresses from tfstate
         working-directory: infra/terraform-apprun
         run: |
-          terraform init
+          terraform init -backend-config=backend.hcl
           terraform workspace select ${{ env.TARGET_ENV }}
           echo "BASTION_HOST=$(terraform output -raw bastion_ip_address)" >> "$GITHUB_ENV"
           echo "DB_HOST=$(terraform output -raw db_private_ip)" >> "$GITHUB_ENV"
@@ -174,7 +174,7 @@ jobs:
           EOF
           chmod 600 ~/.aws/credentials
 
-      - run: terraform init
+      - run: terraform init -backend-config=backend.hcl
       - run: terraform workspace select ${{ env.TARGET_ENV }} || terraform workspace new ${{ env.TARGET_ENV }}
 
       # インフラ（クラスタ/ASG/LB/DB/監視など「箱」）の差分適用
