@@ -34,6 +34,9 @@ TFSTATE_URL="${TFSTATE_URL:-s3://${TFSTATE_BUCKET}/env:/${ENVIRONMENT}/apprun/te
 export AWS_PROFILE="${AWS_PROFILE:-sakura}"
 export AWS_REGION="${AWS_REGION:-$(awk -F'"' '/^region/{print $2}' "$BACKEND_HCL")}"
 export AWS_ENDPOINT_URL_S3="${AWS_ENDPOINT_URL_S3:-$(awk -F'"' '/^[[:space:]]*s3[[:space:]]*=/{print $2}' "$BACKEND_HCL")}"
+# S3互換ストレージ対策の保険: SDK の整合性チェックを「必要な場合のみ」に抑える(tfstate-lookup も同じ SDK)
+export AWS_REQUEST_CHECKSUM_CALCULATION="${AWS_REQUEST_CHECKSUM_CALCULATION:-when_required}"
+export AWS_RESPONSE_CHECKSUM_VALIDATION="${AWS_RESPONSE_CHECKSUM_VALIDATION:-when_required}"
 
 # パラメータを Jsonnet に渡す（params.libsonnet は gitignore 済み・毎回生成）
 # 注意: パスワードに ' や \ が含まれると Jsonnet 文字列が壊れるため使用しないこと

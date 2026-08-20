@@ -44,6 +44,9 @@ jobs:
       TF_VAR_registry_dev_password: ${{ secrets.REGISTRY_DEV_PASSWORD }}
       # ダウン検知の通知先(Discord は Webhook URL 末尾に /slack を付けた形式)。未登録なら通知なし
       TF_VAR_alert_slack_webhook: ${{ secrets.ALERT_WEBHOOK }}
+      # S3互換ストレージ対策の保険(skip_s3_checksum はアップロード側のみ。hashicorp/terraform#37432)
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
     steps:
       - uses: actions/checkout@v4
 

@@ -25,6 +25,10 @@ env:
   # ブランチ→環境（main=prod / それ以外=dev）。job レベルの environment: キーでは
   # env コンテキストが参照できないため、各 job では同じ式を直接書いている
   TARGET_ENV: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
+  # S3互換ストレージ対策の保険: AWS SDK の整合性チェックを「必要な場合のみ」に抑える。
+  # skip_s3_checksum はアップロード側しかカバーしないため(hashicorp/terraform#37432)
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
 
 jobs:
   # ─────────────────────────────────────────────
