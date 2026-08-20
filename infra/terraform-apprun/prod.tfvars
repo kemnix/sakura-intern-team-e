@@ -14,7 +14,7 @@ bastion_ssh_public_key_path = "keys/bastion.pub"
 # AppRun 専有型【要検証: 実値をコンパネ / API リファレンスで確認して置き換える】
 ########################################
 
-apprun_service_principal_id = "TODO-console-で確認"
+apprun_service_principal_id = "113801937764"
 # サービスクラスは Terraform がデータソースで自動取得する（未指定なら一覧の先頭）。
 # スペックを明示したい場合のみ、名前で指定する:
 #   一覧の確認: terraform output available_worker_service_classes / available_lb_service_classes
@@ -28,5 +28,5 @@ apprun_lb_service_class_name     = "AppRun専有型 ロードバランサ 1vCPU 
 # 公開設定（ドメイン取得後に設定。シンプル監視もこの FQDN を監視する）
 ########################################
 
-public_fqdn        = "" # 例: sakuravel.example.com
-lets_encrypt_email = "" # 例: team-e@example.com
+public_fqdn        = "sakuravel-prod.kemnix.dev" # 例: dev.sakuravel.example.com
+lets_encrypt_email = "tsubaki@nxla.net"          # 空なら TLS 自動発行なし

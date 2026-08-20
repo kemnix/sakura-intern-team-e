@@ -22,7 +22,6 @@ ENVIRONMENT="${ENVIRONMENT:-dev}"
 source "./env.${ENVIRONMENT}.sh"
 
 IMAGE_TAG="${IMAGE_TAG:?IMAGE_TAG を設定してください (git SHA 推奨。latest は再pull保証が無くロールバックも壊れるため禁止)}"
-PUBLIC_FQDN="${PUBLIC_FQDN:?PUBLIC_FQDN が未設定です (env.${ENVIRONMENT}.sh を確認)}"
 REGISTRY_PASSWORD="${REGISTRY_PASSWORD:-${TF_VAR_registry_password:?REGISTRY_PASSWORD が未設定です}}"
 DB_PASSWORD="${DB_PASSWORD:-${TF_VAR_db_password:?DB_PASSWORD が未設定です}}"
 
@@ -40,7 +39,6 @@ cat > params.libsonnet <<EOF
 {
   env: '${ENVIRONMENT}',
   tag: '${IMAGE_TAG}',
-  fqdn: '${PUBLIC_FQDN}',
   registryHost: '${REGISTRY_HOST}',
   registryUser: '${REGISTRY_USER}',
   registryPassword: '${REGISTRY_PASSWORD}',
