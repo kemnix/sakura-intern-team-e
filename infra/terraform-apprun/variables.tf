@@ -97,9 +97,8 @@ variable "bastion_ssh_public_key_path" {
 ########################################
 
 variable "registry_name" {
-  description = "コンテナレジストリ名（<registry_name>.sakuracr.jp になる）"
+  description = "コンテナレジストリ名（<registry_name>.sakuracr.jp になる）。デフォルトは意図的に無し — 環境ごとに必ず tfvars で指定する"
   type        = string
-  default     = "intern-team-e"
 }
 
 variable "registry_user" {
@@ -112,6 +111,19 @@ variable "registry_password" {
   description = "レジストリユーザーのパスワード"
   type        = string
   sensitive   = true
+}
+
+variable "registry_dev_user" {
+  description = "手動 push 用のレジストリユーザー名（デプロイ担当者が docker push するときに使う）"
+  type        = string
+  default     = "dev-push-user"
+}
+
+variable "registry_dev_password" {
+  description = "手動 push 用ユーザーのパスワード。空ならこのユーザーは作成しない"
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 ########################################

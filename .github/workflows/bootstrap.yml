@@ -40,6 +40,8 @@ jobs:
       TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
       TF_VAR_bastion_password: ${{ secrets.BASTION_PASSWORD }}
       TF_VAR_registry_password: ${{ secrets.REGISTRY_PASSWORD }}
+      # 手動 push 用ユーザーのパスワード。未登録ならユーザー自体を作らない
+      TF_VAR_registry_dev_password: ${{ secrets.REGISTRY_DEV_PASSWORD }}
       # ダウン検知の通知先(Discord は Webhook URL 末尾に /slack を付けた形式)。未登録なら通知なし
       TF_VAR_alert_slack_webhook: ${{ secrets.ALERT_WEBHOOK }}
     steps:

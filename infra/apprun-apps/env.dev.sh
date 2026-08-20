@@ -11,5 +11,6 @@ export REGISTRY_USER="${REGISTRY_USER:-cicd-push-user}"
 export DB_USER="${DB_USER:-sakuravel_app}"
 export DB_NAME="${DB_NAME:-sakuravel_app}"
 export USE_LETS_ENCRYPT="${USE_LETS_ENCRYPT:-true}"
-export SCALE_MIN="${SCALE_MIN:-1}" # dev はコスト優先で 1〜2
-export SCALE_MAX="${SCALE_MAX:-2}"
+# prod と同じコンテナ数(冗長性を prod と同条件で検証する)。コストはワーカーのスペックダウンで相殺
+export SCALE_MIN="${SCALE_MIN:-2}"
+export SCALE_MAX="${SCALE_MAX:-5}"

@@ -151,6 +151,8 @@ jobs:
       TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
       TF_VAR_bastion_password: ${{ secrets.BASTION_PASSWORD }}
       TF_VAR_registry_password: ${{ secrets.REGISTRY_PASSWORD }}
+      # 手動 push 用ユーザーのパスワード。未登録ならユーザー自体を作らない
+      TF_VAR_registry_dev_password: ${{ secrets.REGISTRY_DEV_PASSWORD }}
       # ダウン検知の通知先(Discord は Webhook URL 末尾に /slack を付けた形式)。未登録なら通知なし
       TF_VAR_alert_slack_webhook: ${{ secrets.ALERT_WEBHOOK }}
     steps:
@@ -200,10 +202,13 @@ jobs:
         run: |
           # 単一オリジン: nginx 経由で frontend / api 両方に到達する。
           # FQDN の唯一の情報源は tfvars(public_fqdn) → terraform output から取得
+          # 全 curl にリトライを付ける: DNS は LB 2ノードへのラウンドロビンで、
+          # 証明書の配布・コンテナ入替がノード間で時間差を持つため、単発だと偽陽性で落ちる
           PUBLIC_FQDN=$(terraform output -raw public_fqdn)
-          curl -sf --retry 10 --retry-delay 6 --retry-all-errors "https://$PUBLIC_FQDN/api/healthz"
-          curl -sf "https://$PUBLIC_FQDN/api/trending" > /dev/null
-          curl -sf "https://$PUBLIC_FQDN/" > /dev/null
+          CURL="curl -sf --retry 10 --retry-delay 6 --retry-all-errors"
+          $CURL "https://$PUBLIC_FQDN/api/healthz"
+          $CURL "https://$PUBLIC_FQDN/api/trending" > /dev/null
+          $CURL "https://$PUBLIC_FQDN/" > /dev/null
 
       # ロールバック手順（2通り）:
       #   A) 即時（推奨・数秒）: 旧バージョンを再有効化するだけ（再ビルド不要）

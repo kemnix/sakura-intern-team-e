@@ -1,26 +1,46 @@
 ########################################
 # コンテナレジストリ
 ########################################
-# チームで既にコンパネから作成済みの場合は、新規作成せず import する:
-#   terraform import sakura_container_registry.main[0] <レジストリのID>
-# レジストリは prod / dev で共用（イメージはタグで区別）のため、
-# prod 側の apply でのみ作成する。
+# レジストリは prod / dev で共用（イメージはタグで区別）。時系列で先に構築される
+# dev 側の apply（Bootstrap Infra）で作成し、prod の apply は一切触らない。
+# ユーザー(cicd-push-user)も同時に作成される — パスワードは Secrets の
+# REGISTRY_PASSWORD(TF_VAR_registry_password) が唯一の情報源。
+# コンパネ製の既存レジストリを引き継ぐ場合のみ import する（通常は不要）:
+#   terraform import 'sakura_container_registry.main[0]' <レジストリのID>
 
 resource "sakura_container_registry" "main" {
-  count = var.environment == "prod" ? 1 : 0
+  count = var.environment == "dev" ? 1 : 0
 
   name            = var.registry_name
   subdomain_label = var.registry_name
   # access_level は 2026-05 に公開アクセス設定が廃止され deprecated（常に認証必須）
 
-  user = [
-    {
-      name                = var.registry_user
-      password_wo         = var.registry_password
-      password_wo_version = 1
-      permission          = "readwrite" # CI の push 用。AppRun の pull 用に readonly ユーザーを分けてもよい
-    },
-  ]
+  user = concat(
+    [
+      {
+        name                = var.registry_user
+        password_wo         = var.registry_password
+        password_wo_version = 1
+        permission          = "readwrite" # CI の push 用。AppRun の pull 用に readonly ユーザーを分けてもよい
+      },
+    ],
+    # デプロイ担当者の手動 push 用ユーザー。パスワード未設定なら作らない
+    var.registry_dev_password != "" ? [
+      {
+        name                = var.registry_dev_user
+        password_wo         = var.registry_dev_password
+        password_wo_version = 1
+        permission          = "readwrite"
+      },
+    ] : [],
+  )
+
+  # dev の destroy に共用レジストリ（prod 稼働中のタグや再ビルド不能な
+  # frontend:latest を含む全イメージ）を巻き込まないための保険。
+  # 本当に破棄する場合は先に: terraform state rm 'sakura_container_registry.main[0]'
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 ########################################

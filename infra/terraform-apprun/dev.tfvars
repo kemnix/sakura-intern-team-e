@@ -23,7 +23,8 @@ apprun_service_principal_id = "113801850061"
 # サービスクラスは Terraform がデータソースで自動取得する（未指定なら一覧の先頭）。
 # スペックを明示したい場合のみ、名前で指定する:
 #   一覧の確認: terraform output available_worker_service_classes / available_lb_service_classes
-apprun_worker_service_class_name = "AppRun専有型 ワーカ 4vCPU / 4GBメモリ"
+# dev はコンテナ数を prod と同じにする代わりにスペックを1段下げてコスト相殺
+apprun_worker_service_class_name = "AppRun専有型 ワーカ 2vCPU / 2GBメモリ"
 apprun_lb_service_class_name     = "AppRun専有型 ロードバランサ 1vCPU / 2GBメモリ（冗長構成）"
 
 monitoring_suite_log_endpoint = "113801924446.logs.monitoring.global.api.sacloud.jp"
