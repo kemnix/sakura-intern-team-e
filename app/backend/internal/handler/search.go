@@ -33,7 +33,7 @@ func (h *Handler) searchPosts(w http.ResponseWriter, r *http.Request, q string, 
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT id FROM posts
 		WHERE content LIKE ?
-		ORDER BY created_at DESC
+		ORDER BY created_at DESC, id DESC
 		LIMIT ? OFFSET ?
 	`, pattern, perPage, offset)
 	if err != nil {
@@ -49,12 +49,12 @@ func (h *Handler) searchPosts(w http.ResponseWriter, r *http.Request, q string, 
 		postIDs = append(postIDs, postID)
 	}
 
-	posts := make([]any, 0, len(postIDs))
-	for _, postID := range postIDs {
-		p, err := h.fetchPost(r, postID, viewerID)
-		if err == nil {
-			posts = append(posts, p)
-		}
+	rows.Close()
+
+	posts, err := h.fetchPostsBulk(r, postIDs, viewerID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
 	}
 
 	var total int
