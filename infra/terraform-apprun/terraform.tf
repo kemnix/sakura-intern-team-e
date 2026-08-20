@@ -19,15 +19,12 @@ terraform {
   # バケットは事前にコンパネで作成。アクセスキーは ~/.aws/credentials の
   # [sakura] プロファイルから読む（CD ではランナー上に同名プロファイルを生成する。
   # deploy.yml の "Set up object storage credentials profile" ステップ参照）。
-  # ※bucket / endpoint を変える場合は deploy-apps.sh の TFSTATE_URL / AWS_* デフォルトも揃えること
+  # bucket / region / endpoints は backend.hcl に外出ししている(partial configuration)。
+  # backend ブロックは変数を参照できない仕様のため、init 時にファイルで注入する:
+  #   terraform init -backend-config=backend.hcl
   backend "s3" {
-    bucket  = "sakuravel-app-tf"
     profile = "sakura"
     key     = "apprun/terraform.tfstate"
-    region  = "jp-north-1" # isk01(石狩第1サイト)のリージョン。東京(tky01)は jp-east-1
-    endpoints = {
-      s3 = "https://s3.isk01.sakurastorage.jp"
-    }
 
     # S3互換ストレージ向けの互換フラグ
     skip_credentials_validation = true

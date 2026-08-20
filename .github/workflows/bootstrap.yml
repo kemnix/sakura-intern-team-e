@@ -63,7 +63,7 @@ jobs:
           EOF
           chmod 600 ~/.aws/credentials
 
-      - run: terraform init
+      - run: terraform init -backend-config=backend.hcl
       - run: terraform workspace select ${{ inputs.environment }} || terraform workspace new ${{ inputs.environment }}
 
       - name: terraform apply

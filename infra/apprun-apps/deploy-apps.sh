@@ -25,13 +25,15 @@ IMAGE_TAG="${IMAGE_TAG:?IMAGE_TAG を設定してください (git SHA 推奨。
 REGISTRY_PASSWORD="${REGISTRY_PASSWORD:-${TF_VAR_registry_password:?REGISTRY_PASSWORD が未設定です}}"
 DB_PASSWORD="${DB_PASSWORD:-${TF_VAR_db_password:?DB_PASSWORD が未設定です}}"
 
-# インフラ由来の値(ノードIPプール / DB IP)は tfstate から jsonnet が直接引く(--tfstate)。
-# tfstate はさくらのオブジェクトストレージ上にあるため S3 互換の接続情報を通す。
-# ※バケット/endpoint は terraform-apprun/terraform.tf の backend 設定と揃えること
-TFSTATE_URL="${TFSTATE_URL:-s3://sakuravel-app-tf/env:/${ENVIRONMENT}/apprun/terraform.tfstate}"
+# インフラ由来の値(ノードIPプール / DB IP / FQDN)は tfstate から jsonnet が直接引く(--tfstate)。
+# tfstate の接続情報(バケット/リージョン/エンドポイント)の唯一の情報源は
+# terraform-apprun/backend.hcl — ここから読むことで二重管理を避ける
+BACKEND_HCL="../terraform-apprun/backend.hcl"
+TFSTATE_BUCKET="${TFSTATE_BUCKET:-$(awk -F'"' '/^bucket/{print $2}' "$BACKEND_HCL")}"
+TFSTATE_URL="${TFSTATE_URL:-s3://${TFSTATE_BUCKET}/env:/${ENVIRONMENT}/apprun/terraform.tfstate}"
 export AWS_PROFILE="${AWS_PROFILE:-sakura}"
-export AWS_REGION="${AWS_REGION:-jp-north-1}"
-export AWS_ENDPOINT_URL_S3="${AWS_ENDPOINT_URL_S3:-https://s3.isk01.sakurastorage.jp}"
+export AWS_REGION="${AWS_REGION:-$(awk -F'"' '/^region/{print $2}' "$BACKEND_HCL")}"
+export AWS_ENDPOINT_URL_S3="${AWS_ENDPOINT_URL_S3:-$(awk -F'"' '/^[[:space:]]*s3[[:space:]]*=/{print $2}' "$BACKEND_HCL")}"
 
 # パラメータを Jsonnet に渡す（params.libsonnet は gitignore 済み・毎回生成）
 # 注意: パスワードに ' や \ が含まれると Jsonnet 文字列が壊れるため使用しないこと
